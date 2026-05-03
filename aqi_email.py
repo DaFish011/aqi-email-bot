@@ -1,27 +1,24 @@
 import requests
 import smtplib
 from email.mime.text import MIMEText
-import datetime
-
-# === RUN ONLY ON SATURDAY ===
-# today = datetime.datetime.today().weekday()
-# if today != 5:
-#     quit()
+import os
 
 # =========================
-# 🔴 CHANGE THESE VALUES
+# 🔐 ENV VARIABLES (GitHub Secrets)
 # =========================
-API_KEY = "c27d42cb4047f2484c92cfddf912fbcd"
+API_KEY = os.getenv("API_KEY")
 
-SENDER = "verdegan011@gmail.com"
-PASSWORD = "dlmnufmzwygrdnkt"
+SENDER = os.getenv("EMAIL_USER")
+PASSWORD = os.getenv("EMAIL_PASS")
+
 RECEIVERS = [
     "verdegan011@gmail.com",
-    "kroderno011@gmail.com"]
+    "kroderno011@gmail.com"
+]
 
 # =========================
-
 # Locations
+# =========================
 locations = [
     {"name": "Biñan, Laguna", "lat": 14.3386, "lon": 121.0807},
     {"name": "Calamba, Laguna", "lat": 14.2117, "lon": 121.1653},
@@ -41,7 +38,6 @@ def get_aqi_data(lat, lon):
     response = requests.get(url)
     data = response.json()
 
-    # Handle API errors safely
     if "list" not in data:
         print("API ERROR:", data)
         return {
@@ -69,7 +65,9 @@ def get_aqi_data(lat, lon):
         "so2": comp.get("so2", 0),
     }
 
+# =========================
 # Build email
+# =========================
 message = "🌏 Weekly Air Quality Report\n\n"
 
 for loc in locations:
@@ -91,7 +89,9 @@ for loc in locations:
 ------------------------
 """
 
+# =========================
 # Send email
+# =========================
 msg = MIMEText(message)
 msg["Subject"] = "🌏 Weekly AQI Report (Biñan & Calamba)"
 msg["From"] = SENDER
@@ -101,4 +101,4 @@ with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
     server.login(SENDER, PASSWORD)
     server.sendmail(SENDER, RECEIVERS, msg.as_string())
 
-print("Email sent!")
+print("Email sent successfully!")
