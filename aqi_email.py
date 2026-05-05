@@ -24,7 +24,9 @@ locations = [
     {"name": "Calamba, Laguna", "lat": 14.2117, "lon": 121.1653},
 ]
 
-# AQI meaning
+# =========================
+# AQI meaning (label only)
+# =========================
 aqi_map = {
     1: "Good 🟢",
     2: "Fair 🟡",
@@ -33,13 +35,70 @@ aqi_map = {
     5: "Very Poor 🟣"
 }
 
+# =========================
+# AQI INTERPRETATION
+# =========================
+def interpret_aqi(aqi):
+    return {
+        1: "Air is clean. Safe for outdoor activities.",
+        2: "Air is acceptable. Sensitive people should take care.",
+        3: "Moderate pollution. Limit prolonged outdoor exposure.",
+        4: "Poor air quality. Avoid outdoor exercise.",
+        5: "Very unhealthy. Stay indoors if possible."
+    }.get(aqi, "No data")
+
+# =========================
+# TEMPERATURE INTERPRETATION
+# =========================
+def interpret_temp(temp):
+    if temp == "-":
+        return "-"
+    if temp < 20:
+        return "Cool"
+    elif temp < 28:
+        return "Comfortable"
+    elif temp < 33:
+        return "Warm"
+    else:
+        return "Hot"
+
+# =========================
+# WIND INTERPRETATION
+# =========================
+def interpret_wind(speed):
+    if speed == "-":
+        return "-"
+    if speed < 1:
+        return "Calm"
+    elif speed < 3:
+        return "Light breeze"
+    elif speed < 6:
+        return "Moderate breeze"
+    elif speed < 10:
+        return "Strong breeze"
+    else:
+        return "Very strong wind"
+
+# =========================
+# WIND DIRECTION
+# =========================
+def get_wind_direction(deg):
+    if deg == "-" or deg is None:
+        return "-"
+    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    index = int((deg + 22.5) / 45) % 8
+    return directions[index]
+
+# =========================
+# AQI FUNCTION
+# =========================
 def get_aqi_data(lat, lon):
     url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
     response = requests.get(url)
     data = response.json()
 
     if "list" not in data:
-        print("API ERROR:", data)
+        print("AQI API ERROR:", data)
         return {
             "aqi": "N/A",
             "aqi_text": "Error",
@@ -66,34 +125,73 @@ def get_aqi_data(lat, lon):
     }
 
 # =========================
-# Build email
+# WEATHER FUNCTION
 # =========================
-message = "🌏 Weekly Air Quality Report\n\n"
+def get_weather_data(lat, lon):
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+    
+    response = requests.get(url)
+    data = response.json()
+
+    if "main" not in data:
+        print("WEATHER API ERROR:", data)
+        return {
+            "temp": "-",
+            "humidity": "-",
+            "wind_speed": "-",
+            "wind_deg": "-",
+            "description": "Error"
+        }
+
+    return {
+        "temp": data["main"]["temp"],
+        "humidity": data["main"]["humidity"],
+        "wind_speed": data["wind"]["speed"],
+        "wind_deg": data["wind"]["deg"],
+        "description": data["weather"][0]["description"]
+    }
+
+# =========================
+# BUILD EMAIL
+# =========================
+message = "🌏 Weekly Air Quality & Weather Report\n\n"
 
 for loc in locations:
-    data = get_aqi_data(loc["lat"], loc["lon"])
+    aqi = get_aqi_data(loc["lat"], loc["lon"])
+    weather = get_weather_data(loc["lat"], loc["lon"])
+
+    aqi_text = interpret_aqi(aqi["aqi"])
+    temp_text = interpret_temp(weather["temp"])
+    wind_text = interpret_wind(weather["wind_speed"])
+    wind_dir = get_wind_direction(weather["wind_deg"])
 
     message += f"""
 📍 {loc['name']}
 
-🧭 AQI: {data['aqi']} ({data['aqi_text']})
+🧭 AQI: {aqi['aqi']} ({aqi['aqi_text']})
+💡 {aqi_text}
+
+🌤 Weather: {weather['description']}
+🌡 Temperature: {weather['temp']} °C ({temp_text})
+💧 Humidity: {weather['humidity']}%
+🌬 Wind: {weather['wind_speed']} m/s ({wind_text}, {wind_dir})
 
 🔬 Pollutants:
-- PM2.5: {data['pm2_5']} μg/m³
-- PM10: {data['pm10']} μg/m³
-- CO: {data['co']} μg/m³
-- NO₂: {data['no2']} μg/m³
-- O₃: {data['o3']} μg/m³
-- SO₂: {data['so2']} μg/m³
+- PM2.5: {aqi['pm2_5']} μg/m³
+- PM10: {aqi['pm10']} μg/m³
+- CO: {aqi['co']} μg/m³
+- NO₂: {aqi['no2']} μg/m³
+- O₃: {aqi['o3']} μg/m³
+- SO₂: {aqi['so2']} μg/m³
 
 ------------------------
 """
 
 # =========================
-# Send email
+# SEND EMAIL
 # =========================
 msg = MIMEText(message)
-msg["Subject"] = "🌏 Weekly AQI Report (Biñan & Calamba)"
+msg["Subject"] = "🌏 Weekly AQI & Weather Report (Biñan & Calamba)"
 msg["From"] = SENDER
 msg["To"] = ", ".join(RECEIVERS)
 
