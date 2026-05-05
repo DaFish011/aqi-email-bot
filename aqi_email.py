@@ -4,7 +4,7 @@ from email.mime.text import MIMEText
 import os
 
 # =========================
-# 🔐 ENV VARIABLES (GitHub Secrets)
+# 🔐 ENV VARIABLES
 # =========================
 API_KEY = os.getenv("API_KEY")
 
@@ -25,7 +25,7 @@ locations = [
 ]
 
 # =========================
-# AQI meaning (label only)
+# AQI meaning
 # =========================
 aqi_map = {
     1: "Good 🟢",
@@ -34,6 +34,15 @@ aqi_map = {
     4: "Poor 🔴",
     5: "Very Poor 🟣"
 }
+
+# =========================
+# SAFE NUMBER CONVERTER (IMPORTANT FIX)
+# =========================
+def safe_float(value):
+    try:
+        return float(value)
+    except:
+        return None
 
 # =========================
 # AQI INTERPRETATION
@@ -48,11 +57,12 @@ def interpret_aqi(aqi):
     }.get(aqi, "No data")
 
 # =========================
-# TEMPERATURE INTERPRETATION
+# TEMPERATURE INTERPRETATION (FIXED)
 # =========================
 def interpret_temp(temp):
-    if temp == "-":
-        return "-"
+    temp = safe_float(temp)
+    if temp is None:
+        return "No data"
     if temp < 20:
         return "Cool"
     elif temp < 28:
@@ -63,11 +73,12 @@ def interpret_temp(temp):
         return "Hot"
 
 # =========================
-# WIND INTERPRETATION
+# WIND INTERPRETATION (FIXED)
 # =========================
 def interpret_wind(speed):
-    if speed == "-":
-        return "-"
+    speed = safe_float(speed)
+    if speed is None:
+        return "No data"
     if speed < 1:
         return "Calm"
     elif speed < 3:
@@ -80,10 +91,11 @@ def interpret_wind(speed):
         return "Very strong wind"
 
 # =========================
-# WIND DIRECTION
+# WIND DIRECTION (FIXED SAFETY)
 # =========================
 def get_wind_direction(deg):
-    if deg == "-" or deg is None:
+    deg = safe_float(deg)
+    if deg is None:
         return "-"
     directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
     index = int((deg + 22.5) / 45) % 8
@@ -99,16 +111,7 @@ def get_aqi_data(lat, lon):
 
     if "list" not in data:
         print("AQI API ERROR:", data)
-        return {
-            "aqi": "N/A",
-            "aqi_text": "Error",
-            "pm2_5": "-",
-            "pm10": "-",
-            "co": "-",
-            "no2": "-",
-            "o3": "-",
-            "so2": "-"
-        }
+        return None
 
     main = data["list"][0]["main"]
     comp = data["list"][0]["components"]
@@ -135,13 +138,7 @@ def get_weather_data(lat, lon):
 
     if "main" not in data:
         print("WEATHER API ERROR:", data)
-        return {
-            "temp": "-",
-            "humidity": "-",
-            "wind_speed": "-",
-            "wind_deg": "-",
-            "description": "Error"
-        }
+        return None
 
     return {
         "temp": data["main"]["temp"],
@@ -159,6 +156,9 @@ message = "🌏 Weekly Air Quality & Weather Report\n\n"
 for loc in locations:
     aqi = get_aqi_data(loc["lat"], loc["lon"])
     weather = get_weather_data(loc["lat"], loc["lon"])
+
+    if not aqi or not weather:
+        continue
 
     aqi_text = interpret_aqi(aqi["aqi"])
     temp_text = interpret_temp(weather["temp"])
