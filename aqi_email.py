@@ -36,7 +36,7 @@ aqi_map = {
 }
 
 # =========================
-# SAFE NUMBER CONVERTER (IMPORTANT FIX)
+# SAFE CONVERTER
 # =========================
 def safe_float(value):
     try:
@@ -57,7 +57,7 @@ def interpret_aqi(aqi):
     }.get(aqi, "No data")
 
 # =========================
-# TEMPERATURE INTERPRETATION (FIXED)
+# WEATHER INTERPRETATION
 # =========================
 def interpret_temp(temp):
     temp = safe_float(temp)
@@ -72,9 +72,6 @@ def interpret_temp(temp):
     else:
         return "Hot"
 
-# =========================
-# WIND INTERPRETATION (FIXED)
-# =========================
 def interpret_wind(speed):
     speed = safe_float(speed)
     if speed is None:
@@ -90,9 +87,6 @@ def interpret_wind(speed):
     else:
         return "Very strong wind"
 
-# =========================
-# WIND DIRECTION (FIXED SAFETY)
-# =========================
 def get_wind_direction(deg):
     deg = safe_float(deg)
     if deg is None:
@@ -102,15 +96,13 @@ def get_wind_direction(deg):
     return directions[index]
 
 # =========================
-# AQI FUNCTION
+# AQI API
 # =========================
 def get_aqi_data(lat, lon):
     url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
-    response = requests.get(url)
-    data = response.json()
+    data = requests.get(url).json()
 
     if "list" not in data:
-        print("AQI API ERROR:", data)
         return None
 
     main = data["list"][0]["main"]
@@ -128,16 +120,13 @@ def get_aqi_data(lat, lon):
     }
 
 # =========================
-# WEATHER FUNCTION
+# WEATHER API
 # =========================
 def get_weather_data(lat, lon):
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
-    
-    response = requests.get(url)
-    data = response.json()
+    data = requests.get(url).json()
 
     if "main" not in data:
-        print("WEATHER API ERROR:", data)
         return None
 
     return {
@@ -160,21 +149,16 @@ for loc in locations:
     if not aqi or not weather:
         continue
 
-    aqi_text = interpret_aqi(aqi["aqi"])
-    temp_text = interpret_temp(weather["temp"])
-    wind_text = interpret_wind(weather["wind_speed"])
-    wind_dir = get_wind_direction(weather["wind_deg"])
-
     message += f"""
 📍 {loc['name']}
 
 🧭 AQI: {aqi['aqi']} ({aqi['aqi_text']})
-💡 {aqi_text}
+💡 {interpret_aqi(aqi['aqi'])}
 
 🌤 Weather: {weather['description']}
-🌡 Temperature: {weather['temp']} °C ({temp_text})
+🌡 Temperature: {weather['temp']} °C ({interpret_temp(weather['temp'])})
 💧 Humidity: {weather['humidity']}%
-🌬 Wind: {weather['wind_speed']} m/s ({wind_text}, {wind_dir})
+🌬 Wind: {weather['wind_speed']} m/s ({interpret_wind(weather['wind_speed'])}, {get_wind_direction(weather['wind_deg'])})
 
 🔬 Pollutants:
 - PM2.5: {aqi['pm2_5']} μg/m³
