@@ -243,7 +243,7 @@ def build_html_email():
                 <h1>🌍 Air Quality Report</h1>
                 <p>Weekly AQI & Weather Summary</p>
             </div>
-            <table class="locations-row" cellpadding="0" cellspacing="0">
+            <table class="locations-row" cellpadding="0" cellspacing="20">
             <tr>
     """
 
@@ -289,7 +289,7 @@ def build_html_email():
         alert_message = "<div class='alert-message'>⚠️ ALERT: Air quality is poor or very poor</div>" if is_alert else ""
 
         card_html = f"""
-                <td style="width: 50%; padding: 10px; vertical-align: top;">
+                <td style="width: 50%; padding: 20px; vertical-align: top;">
                 <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
                     <div class="location-name">📍 {loc['name']}</div>
                     
