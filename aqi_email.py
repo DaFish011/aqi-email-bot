@@ -35,8 +35,8 @@ if not all([API_KEY, SENDER, PASSWORD]):
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Biñan, Laguna", "lat": 14.3386, "lon": 121.0807},
     {"name": "Calamba, Laguna", "lat": 14.2117, "lon": 121.1653},
+    {"name": "Biñan, Laguna", "lat": 14.3386, "lon": 121.0807},
 ]
 
 # Taal Volcano coordinates
@@ -159,16 +159,36 @@ def get_taal_news():
     try:
         url = "https://newsapi.org/v2/everything"
         params = {
-            "q": "Taal Volcano",
+            "q": "Taal Volcano eruption OR Taal activity OR Taal alert",
             "sortBy": "publishedAt",
             "language": "en",
             "apiKey": NEWS_API_KEY,
-            "pageSize": 5
+            "pageSize": 10
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
-        return data.get("articles", [])
+        
+        articles = data.get("articles", [])
+        
+        # Filter out irrelevant articles
+        filtered = []
+        exclude_keywords = ["pypi", "mcp", "data-mcp", "government data", "philippine", "software"]
+        
+        for article in articles:
+            title = article.get("title", "").lower()
+            description = article.get("description", "").lower() if article.get("description") else ""
+            
+            # Skip if contains exclude keywords
+            if any(keyword in title or keyword in description for keyword in exclude_keywords):
+                continue
+            
+            # Keep if it mentions Taal volcano specifically
+            if "taal" in title or "taal" in description:
+                filtered.append(article)
+        
+        return filtered[:5]
+        
     except RequestException as e:
         logger.error(f"Failed to fetch Taal news: {e}")
         return []
@@ -182,15 +202,17 @@ def build_html_email():
     <head>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f5f5f5; }
-            .container { max-width: 600px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            .container { max-width: 900px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
             .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
             .header h1 { margin: 0; font-size: 28px; }
             .header p { margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; }
-            .location-card { margin: 20px; padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
-            .location-name { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 10px; }
-            .aqi-box { display: inline-block; padding: 15px 20px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 15px; }
-            .aqi-value { font-size: 32px; }
-            .aqi-label { font-size: 16px; }
+            .locations-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px; }
+            .location-card { padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
+            .location-name { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; }
+            .aqi-box { display: inline-block; padding: 15px 20px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 15px; text-align: center; }
+            .aqi-value { font-size: 36px; line-height: 1; }
+            .aqi-label { font-size: 16px; margin-top: 5px; }
+            .aqi-pm { font-size: 12px; margin-top: 5px; opacity: 0.9; }
             .aqi-advice { margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 4px; font-size: 13px; color: #555; }
             .weather-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 15px 0; }
             .weather-item { background-color: #f0f0f0; padding: 10px; border-radius: 4px; text-align: center; }
@@ -202,6 +224,20 @@ def build_html_email():
             .pollutants-table tr:nth-child(even) { background-color: #f9f9f9; }
             .footer { background-color: #f5f5f5; padding: 15px; text-align: center; border-radius: 0 0 8px 8px; font-size: 11px; color: #999; }
             .divider { height: 1px; background-color: #e0e0e0; margin: 20px; }
+            .news-section { margin: 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px; }
+            .news-title { color: #ff6f00; margin-top: 0; margin-bottom: 15px; }
+            .news-article { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ffe0b2; }
+            .news-article:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+            .news-article a { color: #ff6f00; text-decoration: none; font-weight: bold; }
+            .news-article a:hover { text-decoration: underline; }
+            .news-source { font-size: 12px; color: #999; }
+            .news-desc { font-size: 13px; color: #333; margin: 5px 0 0 0; }
+            .taal-info { background-color: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1565c0; }
+            .alert-card { border-left-color: #d32f2f !important; background-color: #ffebee !important; }
+            .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 10px; }
+            @media (max-width: 600px) {
+                .locations-grid { grid-template-columns: 1fr; }
+            }
         </style>
     </head>
     <body>
@@ -210,8 +246,11 @@ def build_html_email():
                 <h1>🌍 Air Quality Report</h1>
                 <p>Weekly AQI & Weather Summary</p>
             </div>
+            <div class="locations-grid">
     """
 
+    location_cards = []
+    
     for loc in locations:
         aqi_data = get_aqi_data(loc["lat"], loc["lon"])
         weather_data = get_weather_data(loc["lat"], loc["lon"])
@@ -220,15 +259,19 @@ def build_html_email():
             logger.warning(f"No AQI data for {loc['name']}")
             continue
 
-        aqi_value = aqi_data.get("aqi", 0)
-        aqi_info = aqi_map.get(aqi_value, aqi_map[3])  # Default to moderate
+        # Get AQI level (1-5 scale)
+        aqi_level = aqi_data.get("aqi", 0)
+        aqi_info = aqi_map.get(aqi_level, aqi_map[3])
+        
+        # Convert PM2.5 to 0-500 scale
+        pm2_5 = aqi_data.get("pm2_5", 0)
+        aqi_numeric = min(int(pm2_5 * 4.16), 500) if pm2_5 else 0
         
         temp = weather_data.get("temp", "-") if weather_data else "-"
         wind_speed = weather_data.get("wind_speed", "-") if weather_data else "-"
         wind_deg = weather_data.get("wind_deg") if weather_data else None
         wind_dir = get_wind_direction(wind_deg)
 
-        pm2_5 = aqi_data.get("pm2_5", "-")
         pm10 = aqi_data.get("pm10", "-")
         no2 = aqi_data.get("no2", "-")
         o3 = aqi_data.get("o3", "-")
@@ -242,32 +285,28 @@ def build_html_email():
         taal_indicator = "TOWARDS" if wind_towards_taal else "AWAY FROM"
 
         # Determine alert styling
-        is_alert = aqi_value >= 100
+        is_alert = aqi_level >= 4
+        alert_class = "alert-card" if is_alert else ""
         alert_border_color = "#d32f2f" if is_alert else "#667eea"
-        alert_background = "#ffebee" if is_alert else "#f9f9f9"
-        alert_message = "<div style='color: #d32f2f; font-weight: bold; margin-bottom: 10px;'>⚠️ ALERT: AQI is above 100 threshold</div>" if is_alert else ""
+        alert_message = "<div class='alert-message'>⚠️ ALERT: Air quality is poor or very poor</div>" if is_alert else ""
 
-        html_content += f"""
-            <div class="location-card" style="border-left-color: {alert_border_color}; background-color: {alert_background};">
+        card_html = f"""
+            <div class="location-card {alert_class}" style="border-left-color: {alert_border_color};">
                 <div class="location-name">📍 {loc['name']}</div>
                 
                 {alert_message}
                 
-                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
-                    <div class="aqi-box" style="background-color: {aqi_info['color']}; margin-bottom: 0;">
-                        <div class="aqi-value">{aqi_value}</div>
-                        <div class="aqi-label">{aqi_info['label']}</div>
-                    </div>
-                    <div style="font-size: 14px; color: #333;">
-                        <strong>AQI Value:</strong><br>{aqi_value}/500
-                    </div>
+                <div class="aqi-box" style="background-color: {aqi_info['color']}; width: 100%;">
+                    <div class="aqi-value">{aqi_level}</div>
+                    <div class="aqi-label">{aqi_info['label']}</div>
+                    <div class="aqi-pm">PM2.5: {aqi_numeric}/500</div>
                 </div>
                 
                 <div class="aqi-advice">
-                    💡 {aqi_info['advice']}
+                    💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
                 </div>
                 
-                <div style="background-color: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1565c0;">
+                <div class="taal-info">
                     🌋 Wind direction: {wind_dir}. Air from your location is moving <strong>{taal_indicator} Taal</strong>
                 </div>
                 
@@ -309,17 +348,24 @@ def build_html_email():
                     </tr>
                 </table>
             </div>
-            <div class="divider"></div>
         """
+        location_cards.append(card_html)
+
+    # Add all location cards
+    for card in location_cards:
+        html_content += card
+    
+    html_content += """
+            </div>
+    """
 
     # Add Taal News Section
     news_articles = get_taal_news()
-    news_html = ""
     
     if news_articles:
-        news_html = """
-        <div style="margin: 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px;">
-            <h3 style="color: #ff6f00; margin-top: 0;">🔔 Recent Taal Volcano News</h3>
+        html_content += """
+        <div class="news-section">
+            <h3 class="news-title">🔔 Recent Taal Volcano News</h3>
         """
         for article in news_articles:
             title = article.get("title", "No title")
@@ -327,27 +373,23 @@ def build_html_email():
             url = article.get("url", "#")
             source = article.get("source", {}).get("name", "Unknown")
             
-            news_html += f"""
-            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ffe0b2;">
-                <a href="{url}" style="color: #ff6f00; text-decoration: none; font-weight: bold;">{title}</a><br>
-                <span style="font-size: 12px; color: #999;">{source}</span><br>
-                <p style="font-size: 13px; color: #333; margin: 5px 0 0 0;">{description}</p>
+            html_content += f"""
+            <div class="news-article">
+                <a href="{url}" target="_blank">{title}</a><br>
+                <span class="news-source">{source}</span><br>
+                <p class="news-desc">{description}</p>
             </div>
             """
         
-        news_html += """
+        html_content += """
         </div>
-        <div class="divider"></div>
         """
     else:
-        news_html = """
+        html_content += """
         <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
             <p style="color: #999; margin: 0;">ℹ️ No recent Taal activity reported</p>
         </div>
-        <div class="divider"></div>
         """
-    
-    html_content += news_html
 
     html_content += """
             <div class="footer">
