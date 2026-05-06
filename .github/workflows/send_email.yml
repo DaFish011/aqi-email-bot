@@ -26,4 +26,5 @@ jobs:
           API_KEY: ${{ secrets.API_KEY }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
         run: python aqi_email.py
