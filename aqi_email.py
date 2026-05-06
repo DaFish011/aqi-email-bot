@@ -202,20 +202,19 @@ def build_html_email():
     <head>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f5f5f5; }
-            .container { max-width: 900px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            .container { max-width: 1000px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
             .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
             .header h1 { margin: 0; font-size: 28px; }
             .header p { margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; }
-            .locations-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px; }
             .location-card { padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
             .location-name { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; }
-            .aqi-box { display: inline-block; padding: 15px 20px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 15px; text-align: center; }
+            .aqi-box { display: block; padding: 15px 20px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 15px; text-align: center; }
             .aqi-value { font-size: 36px; line-height: 1; }
             .aqi-label { font-size: 16px; margin-top: 5px; }
             .aqi-pm { font-size: 12px; margin-top: 5px; opacity: 0.9; }
             .aqi-advice { margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 4px; font-size: 13px; color: #555; }
-            .weather-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 15px 0; }
-            .weather-item { background-color: #f0f0f0; padding: 10px; border-radius: 4px; text-align: center; }
+            .weather-grid { display: table; width: 100%; margin: 15px 0; border-collapse: collapse; }
+            .weather-cell { display: table-cell; width: 33.33%; background-color: #f0f0f0; padding: 10px; text-align: center; border: 1px solid white; }
             .weather-item-label { font-size: 12px; color: #777; }
             .weather-item-value { font-size: 18px; font-weight: bold; color: #333; }
             .pollutants-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
@@ -235,9 +234,7 @@ def build_html_email():
             .taal-info { background-color: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1565c0; }
             .alert-card { border-left-color: #d32f2f !important; background-color: #ffebee !important; }
             .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 10px; }
-            @media (max-width: 600px) {
-                .locations-grid { grid-template-columns: 1fr; }
-            }
+            .locations-row { width: 100%; border-collapse: collapse; }
         </style>
     </head>
     <body>
@@ -246,7 +243,8 @@ def build_html_email():
                 <h1>🌍 Air Quality Report</h1>
                 <p>Weekly AQI & Weather Summary</p>
             </div>
-            <div class="locations-grid">
+            <table class="locations-row" cellpadding="0" cellspacing="0">
+            <tr>
     """
 
     location_cards = []
@@ -291,63 +289,67 @@ def build_html_email():
         alert_message = "<div class='alert-message'>⚠️ ALERT: Air quality is poor or very poor</div>" if is_alert else ""
 
         card_html = f"""
-            <div class="location-card {alert_class}" style="border-left-color: {alert_border_color};">
-                <div class="location-name">📍 {loc['name']}</div>
-                
-                {alert_message}
-                
-                <div class="aqi-box" style="background-color: {aqi_info['color']}; width: 100%;">
-                    <div class="aqi-value">{aqi_level}</div>
-                    <div class="aqi-label">{aqi_info['label']}</div>
-                    <div class="aqi-pm">PM2.5: {aqi_numeric}/500</div>
-                </div>
-                
-                <div class="aqi-advice">
-                    💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
-                </div>
-                
-                <div class="taal-info">
-                    🌋 Wind direction: {wind_dir}. Air from your location is moving <strong>{taal_indicator} Taal</strong>
-                </div>
-                
-                <div class="weather-grid">
-                    <div class="weather-item">
-                        <div class="weather-item-label">Temperature</div>
-                        <div class="weather-item-value">{temp}°C</div>
+                <td style="width: 50%; padding: 10px; vertical-align: top;">
+                <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
+                    <div class="location-name">📍 {loc['name']}</div>
+                    
+                    {alert_message}
+                    
+                    <div class="aqi-box" style="background-color: {aqi_info['color']};">
+                        <div class="aqi-value">{aqi_level}</div>
+                        <div class="aqi-label">{aqi_info['label']}</div>
+                        <div class="aqi-pm">PM2.5: {aqi_numeric}/500</div>
                     </div>
-                    <div class="weather-item">
-                        <div class="weather-item-label">Wind Speed</div>
-                        <div class="weather-item-value">{wind_speed} m/s</div>
+                    
+                    <div class="aqi-advice">
+                        💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
                     </div>
-                    <div class="weather-item">
-                        <div class="weather-item-label">Direction</div>
-                        <div class="weather-item-value">{wind_dir}</div>
+                    
+                    <div class="taal-info">
+                        🌋 Wind direction: {wind_dir}. Air from your location is moving <strong>{taal_indicator} Taal</strong>
                     </div>
+                    
+                    <table class="weather-grid">
+                    <tr>
+                        <td class="weather-cell">
+                            <div class="weather-item-label">Temperature</div>
+                            <div class="weather-item-value">{temp}°C</div>
+                        </td>
+                        <td class="weather-cell">
+                            <div class="weather-item-label">Wind Speed</div>
+                            <div class="weather-item-value">{wind_speed} m/s</div>
+                        </td>
+                        <td class="weather-cell">
+                            <div class="weather-item-label">Direction</div>
+                            <div class="weather-item-value">{wind_dir}</div>
+                        </td>
+                    </tr>
+                    </table>
+                    
+                    <table class="pollutants-table">
+                        <tr>
+                            <th>Pollutant</th>
+                            <th>Level</th>
+                        </tr>
+                        <tr>
+                            <td>PM2.5</td>
+                            <td>{pm2_5}</td>
+                        </tr>
+                        <tr>
+                            <td>PM10</td>
+                            <td>{pm10}</td>
+                        </tr>
+                        <tr>
+                            <td>NO₂</td>
+                            <td>{no2}</td>
+                        </tr>
+                        <tr>
+                            <td>O₃</td>
+                            <td>{o3}</td>
+                        </tr>
+                    </table>
                 </div>
-                
-                <table class="pollutants-table">
-                    <tr>
-                        <th>Pollutant</th>
-                        <th>Level</th>
-                    </tr>
-                    <tr>
-                        <td>PM2.5</td>
-                        <td>{pm2_5}</td>
-                    </tr>
-                    <tr>
-                        <td>PM10</td>
-                        <td>{pm10}</td>
-                    </tr>
-                    <tr>
-                        <td>NO₂</td>
-                        <td>{no2}</td>
-                    </tr>
-                    <tr>
-                        <td>O₃</td>
-                        <td>{o3}</td>
-                    </tr>
-                </table>
-            </div>
+                </td>
         """
         location_cards.append(card_html)
 
@@ -356,7 +358,8 @@ def build_html_email():
         html_content += card
     
     html_content += """
-            </div>
+            </tr>
+            </table>
     """
 
     # Add Taal News Section
