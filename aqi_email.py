@@ -4,6 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 import logging
+import math
 from requests.exceptions import RequestException
 
 # =========================
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 API_KEY = os.getenv("API_KEY")
 SENDER = os.getenv("EMAIL_USER")
 PASSWORD = os.getenv("EMAIL_PASS")
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
 RECEIVERS = [
     "verdegan011@gmail.com",
@@ -36,6 +38,10 @@ locations = [
     {"name": "Biñan, Laguna", "lat": 14.3386, "lon": 121.0807},
     {"name": "Calamba, Laguna", "lat": 14.2117, "lon": 121.1653},
 ]
+
+# Taal Volcano coordinates
+TAAL_LAT = 14.3568
+TAAL_LON = 121.0064
 
 # =========================
 # AQI LABELS & COLORS
@@ -118,6 +124,56 @@ def get_wind_direction(deg):
         return "-"
 
 # =========================
+# BEARING CALCULATION (FOR TAAL)
+# =========================
+def get_bearing(lat1, lon1, lat2, lon2):
+    """Calculate bearing from point 1 to point 2"""
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlon = lon2 - lon1
+    x = math.sin(dlon) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    bearing = math.degrees(math.atan2(x, y))
+    return (bearing + 360) % 360
+
+def bearing_to_direction(bearing):
+    """Convert bearing (0-360) to compass direction"""
+    directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    return directions[round(bearing / 22.5) % 16]
+
+def is_wind_towards_taal(wind_deg, bearing_to_taal):
+    """Check if wind is blowing towards Taal (within 90 degree cone)"""
+    diff = abs(wind_deg - bearing_to_taal)
+    if diff > 180:
+        diff = 360 - diff
+    return diff < 90
+
+# =========================
+# FETCH TAAL NEWS
+# =========================
+def get_taal_news():
+    """Fetch recent Taal Volcano news from NewsAPI"""
+    if not NEWS_API_KEY:
+        logger.warning("NEWS_API_KEY not set. Skipping news fetch.")
+        return []
+    
+    try:
+        url = "https://newsapi.org/v2/everything"
+        params = {
+            "q": "Taal Volcano",
+            "sortBy": "publishedAt",
+            "language": "en",
+            "apiKey": NEWS_API_KEY,
+            "pageSize": 5
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("articles", [])
+    except RequestException as e:
+        logger.error(f"Failed to fetch Taal news: {e}")
+        return []
+
+# =========================
 # BUILD HTML EMAIL
 # =========================
 def build_html_email():
@@ -177,17 +233,42 @@ def build_html_email():
         no2 = aqi_data.get("no2", "-")
         o3 = aqi_data.get("o3", "-")
 
+        # Calculate bearing to Taal
+        bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
+        direction_to_taal = bearing_to_direction(bearing_to_taal)
+
+        # Check if wind is towards Taal
+        wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
+        taal_indicator = "TOWARDS" if wind_towards_taal else "AWAY FROM"
+
+        # Determine alert styling
+        is_alert = aqi_value >= 100
+        alert_border_color = "#d32f2f" if is_alert else "#667eea"
+        alert_background = "#ffebee" if is_alert else "#f9f9f9"
+        alert_message = "<div style='color: #d32f2f; font-weight: bold; margin-bottom: 10px;'>⚠️ ALERT: AQI is above 100 threshold</div>" if is_alert else ""
+
         html_content += f"""
-            <div class="location-card">
+            <div class="location-card" style="border-left-color: {alert_border_color}; background-color: {alert_background};">
                 <div class="location-name">📍 {loc['name']}</div>
                 
-                <div class="aqi-box" style="background-color: {aqi_info['color']};">
-                    <div class="aqi-value">{aqi_value}</div>
-                    <div class="aqi-label">{aqi_info['label']}</div>
+                {alert_message}
+                
+                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+                    <div class="aqi-box" style="background-color: {aqi_info['color']}; margin-bottom: 0;">
+                        <div class="aqi-value">{aqi_value}</div>
+                        <div class="aqi-label">{aqi_info['label']}</div>
+                    </div>
+                    <div style="font-size: 14px; color: #333;">
+                        <strong>AQI Value:</strong><br>{aqi_value}/500
+                    </div>
                 </div>
                 
                 <div class="aqi-advice">
                     💡 {aqi_info['advice']}
+                </div>
+                
+                <div style="background-color: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1565c0;">
+                    🌋 Wind direction: {wind_dir}. Air from your location is moving <strong>{taal_indicator} Taal</strong>
                 </div>
                 
                 <div class="weather-grid">
@@ -231,9 +312,46 @@ def build_html_email():
             <div class="divider"></div>
         """
 
+    # Add Taal News Section
+    news_articles = get_taal_news()
+    news_html = ""
+    
+    if news_articles:
+        news_html = """
+        <div style="margin: 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px;">
+            <h3 style="color: #ff6f00; margin-top: 0;">🔔 Recent Taal Volcano News</h3>
+        """
+        for article in news_articles:
+            title = article.get("title", "No title")
+            description = article.get("description", "No description")
+            url = article.get("url", "#")
+            source = article.get("source", {}).get("name", "Unknown")
+            
+            news_html += f"""
+            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ffe0b2;">
+                <a href="{url}" style="color: #ff6f00; text-decoration: none; font-weight: bold;">{title}</a><br>
+                <span style="font-size: 12px; color: #999;">{source}</span><br>
+                <p style="font-size: 13px; color: #333; margin: 5px 0 0 0;">{description}</p>
+            </div>
+            """
+        
+        news_html += """
+        </div>
+        <div class="divider"></div>
+        """
+    else:
+        news_html = """
+        <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
+            <p style="color: #999; margin: 0;">ℹ️ No recent Taal activity reported</p>
+        </div>
+        <div class="divider"></div>
+        """
+    
+    html_content += news_html
+
     html_content += """
             <div class="footer">
-                <p>Data sources: OpenWeatherMap API, Open-Meteo API</p>
+                <p>Data sources: OpenWeatherMap API, Open-Meteo API, NewsAPI</p>
                 <p>This is an automated report. Please do not reply to this email.</p>
             </div>
         </div>
