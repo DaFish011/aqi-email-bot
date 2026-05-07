@@ -256,16 +256,14 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # BUILD TREND CHART URL (soft design, muted alarm threshold)
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    def point_colors(values, base_color, alert_color="#ff7043"):
-        return [alert_color if (v is not None and v > 100) else base_color for v in values]
+    def point_colors(values, base, alert="#e53935"):
+        return [alert if (v and v > 100) else base for v in values]
 
-    def point_radii(values, base=3, alert=6):
-        return [alert if (v is not None and v > 100) else base for v in values]
+    def point_radii(values):
+        return [6 if (v and v > 100) else 3 for v in values]
 
-    # Ensure lists exist and compute a reasonable max Y
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
-    max_data = max(all_valid) if all_valid else 100
-    max_y = max(max_data, 100) + 30
+    max_y = max(max(all_valid) if all_valid else 100, 100) + 30
 
     chart_config = {
         "type": "line",
@@ -275,73 +273,49 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 {
                     "label": "Calamba",
                     "data": cal_values,
-                    "borderColor": "rgba(102,126,234,0.95)",
-                    "backgroundColor": "rgba(102,126,234,0.12)",
+                    "borderColor": "#3f51b5",
+                    "backgroundColor": "rgba(63,81,181,0.08)",
                     "borderWidth": 2.5,
-                    "fill": True,
-                    "pointBackgroundColor": point_colors(cal_values, "rgba(102,126,234,0.95)"),
-                    "pointBorderColor": "rgba(255,255,255,0.9)",
+                    "fill": False,
+                    "pointBackgroundColor": point_colors(cal_values, "#3f51b5"),
                     "pointRadius": point_radii(cal_values),
-                    "pointStyle": "circle",
-                    "tension": 0.28,
-                    "spanGaps": True,
-                    "order": 1
+                    "tension": 0.3
                 },
                 {
                     "label": "Biñan",
                     "data": bin_values,
-                    "borderColor": "rgba(251,140,0,0.95)",
-                    "backgroundColor": "rgba(251,140,0,0.10)",
+                    "borderColor": "#fb8c00",
+                    "backgroundColor": "rgba(251,140,0,0.08)",
                     "borderWidth": 2.5,
-                    "fill": True,
-                    "pointBackgroundColor": point_colors(bin_values, "rgba(251,140,0,0.95)"),
-                    "pointBorderColor": "rgba(255,255,255,0.9)",
+                    "fill": False,
+                    "pointBackgroundColor": point_colors(bin_values, "#fb8c00"),
                     "pointRadius": point_radii(bin_values),
-                    "pointStyle": "circle",
-                    "tension": 0.28,
-                    "spanGaps": True,
-                    "order": 1
+                    "tension": 0.3
                 },
                 {
                     "label": "Threshold (100)",
                     "data": [100] * len(labels),
-                    "borderColor": "#ff7043",
+                    "borderColor": "#e53935",
                     "borderDash": [6, 4],
                     "borderWidth": 1.5,
                     "pointRadius": 0,
-                    "fill": False,
-                    "order": 0
+                    "fill": False
                 }
             ]
         },
         "options": {
-            "backgroundColor": "#fafafa",
-            "layout": {"padding": {"top": 24, "right": 18, "bottom": 18, "left": 12}},
+            "backgroundColor": "#ffffff",
             "scales": {
                 "y": {
                     "min": 0,
                     "max": max_y,
-                    "grid": {"color": "#ececec", "lineWidth": 1},
-                    "ticks": {
-                        "color": "#555",
-                        "font": {"family": "Inter, Arial, sans-serif", "size": 12}
-                    },
-                    "title": {
-                        "display": True,
-                        "text": "AQI (0–500)",
-                        "color": "#555",
-                        "font": {"family": "Inter, Arial, sans-serif", "size": 12}
-                    }
+                    "grid": {"color": "#f0f0f0"},
+                    "ticks": {"color": "#555", "font": {"family": "Inter, Arial", "size": 12}},
+                    "title": {"display": True, "text": "AQI (0–500)", "color": "#555"}
                 },
                 "x": {
                     "grid": {"display": False},
-                    "ticks": {
-                        "color": "#555",
-                        "font": {"family": "Inter, Arial, sans-serif", "size": 11},
-                        "maxRotation": 45,
-                        "autoSkip": True,
-                        "maxTicksLimit": 12
-                    }
+                    "ticks": {"color": "#555", "font": {"family": "Inter, Arial", "size": 11}}
                 }
             },
             "plugins": {
@@ -349,54 +323,30 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "position": "bottom",
                     "labels": {
                         "color": "#333",
-                        "font": {"family": "Inter, Arial, sans-serif", "size": 13, "weight": "500"},
+                        "font": {"family": "Inter, Arial", "size": 13, "weight": "500"},
                         "usePointStyle": True,
                         "pointStyle": "circle",
-                        "padding": 18,
-                        "boxWidth": 10
+                        "padding": 18
                     }
                 },
                 "datalabels": {
                     "display": True,
-                    "formatter": "function(v){ return (v !== null && v > 100) ? v : null; }",
-                    "backgroundColor": "#ff7043",
-                    "borderRadius": 6,
+                    "formatter": "function(v){ return (v && v > 100) ? v : null; }",
+                    "backgroundColor": "#e53935",
+                    "borderRadius": 4,
                     "color": "white",
                     "font": {"size": 11, "weight": "bold"},
-                    "padding": 6,
+                    "padding": 4,
                     "anchor": "end",
                     "align": "top"
-                },
-                "tooltip": {
-                    "enabled": True,
-                    "backgroundColor": "rgba(0,0,0,0.8)",
-                    "titleFont": {"family": "Inter, Arial, sans-serif", "size": 12, "weight": "600"},
-                    "bodyFont": {"family": "Inter, Arial, sans-serif", "size": 11}
                 }
-            },
-            "elements": {
-                "point": {"hoverRadius": 8},
-                "line": {"capBezierPoints": True}
-            },
-            "interaction": {"mode": "nearest", "intersect": False}
+            }
         }
     }
 
-    try:
-        response = requests.post(
-            "https://quickchart.io/chart/create",
-            json={"chart": chart_config, "width": 860, "height": 380, "backgroundColor": "white"},
-            timeout=15
-        )
-        response.raise_for_status()
-        result = response.json()
-        if result.get("success"):
-            return result.get("url")
-    except RequestException:
-        pass
-
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?w=860&h=380&bkg=white&c={encoded}"
+    return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+
 
 # =========================
 # BUILD HTML EMAIL
