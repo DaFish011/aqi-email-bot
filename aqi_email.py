@@ -50,6 +50,26 @@ aqi_map = {
     5: {"label": "Very Poor", "color": "#6a1b9a", "advice": "Avoid outdoor activity. Wear N95 masks if necessary."}
 }
 # =========================
+# PM2.5 → AQI (EPA Formula)
+# =========================
+def pm25_to_aqi(pm25):
+    """Convert PM2.5 µg/m³ to AQI using the EPA piecewise linear formula."""
+    if pm25 is None or pm25 < 0:
+        return 0
+    breakpoints = [
+        (0.0,   12.0,   0,   50),
+        (12.1,  35.4,  51,  100),
+        (35.5,  55.4, 101,  150),
+        (55.5, 150.4, 151,  200),
+        (150.5, 250.4, 201, 300),
+        (250.5, 350.4, 301, 400),
+        (350.5, 500.4, 401, 500),
+    ]
+    for c_low, c_high, aqi_low, aqi_high in breakpoints:
+        if c_low <= pm25 <= c_high:
+            return round(((aqi_high - aqi_low) / (c_high - c_low)) * (pm25 - c_low) + aqi_low)
+    return 500
+# =========================
 # AQI FUNCTION (OPENWEATHER)
 # =========================
 def get_aqi_data(lat, lon):
@@ -177,6 +197,7 @@ def get_aqi_history(lat, lon, days=30):
         logger.error(f"Failed to fetch AQI history for ({lat},{lon}): {e}")
         return []
 def compute_daily_peak_aqi(history_list):
+    """Find the daily peak AQI (EPA formula from PM2.5) and the PH time it occurred."""
     daily = {}
     for entry in history_list:
         dt_utc = datetime.utcfromtimestamp(entry["dt"])
@@ -184,7 +205,7 @@ def compute_daily_peak_aqi(history_list):
         day_key = dt_ph.strftime("%Y-%m-%d")
         day_label = dt_ph.strftime("%b %d")
         pm2_5 = entry.get("components", {}).get("pm2_5") or 0
-        aqi_val = min(int(pm2_5 * 4.16), 500)
+        aqi_val = pm25_to_aqi(pm2_5)
         hour_str = dt_ph.strftime("%I:%M %p").lstrip("0") or "12:00 AM"
         if day_key not in daily or aqi_val > daily[day_key]["value"]:
             daily[day_key] = {"label": day_label, "value": aqi_val, "time": hour_str}
@@ -214,76 +235,69 @@ def align_datasets(cal_labels, cal_values, cal_times, bin_labels, bin_values, bi
 # BUILD TREND CHART URL
 # =========================
 def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
-    def point_colors(values, base_color):
-        return ["#e53935" if (v is not None and v > 100) else base_color for v in values]
+    def point_colors(values, base):
+        return ["#e53935" if (v is not None and v > 100) else base for v in values]
     def point_radii(values):
-        return [6 if (v is not None and v > 100) else 3 for v in values]
-    threshold_data = [100] * len(labels)
-    all_non_none = [v for v in cal_values + bin_values if v is not None]
-    max_y = max(max(all_non_none) if all_non_none else 100, 100) + 30
+        return [5 if (v is not None and v > 100) else 2 for v in values]
+    all_valid = [v for v in cal_values + bin_values if v is not None]
+    max_y = max(max(all_valid) if all_valid else 100, 110) + 20
     chart_config = {
         "type": "line",
         "data": {
             "labels": labels,
             "datasets": [
                 {
-                    "label": "Calamba, Laguna",
+                    "label": "Calamba",
                     "data": cal_values,
                     "borderColor": "#667eea",
-                    "backgroundColor": "rgba(102,126,234,0.08)",
+                    "borderWidth": 2,
                     "fill": False,
                     "pointBackgroundColor": point_colors(cal_values, "#667eea"),
-                    "pointBorderColor": point_colors(cal_values, "#667eea"),
                     "pointRadius": point_radii(cal_values),
-                    "pointHoverRadius": 7,
-                    "borderWidth": 2,
                     "tension": 0.3,
+                    "spanGaps": True,
                     "timeLabels": cal_times,
                     "datalabels": {
-                        "display": "function(ctx){ var v = ctx.dataset.data[ctx.dataIndex]; return v !== null && v > 100; }",
-                        "formatter": "function(val, ctx){ return val + '\\n@ ' + ctx.dataset.timeLabels[ctx.dataIndex]; }",
+                        "display": "function(ctx){ var v=ctx.dataset.data[ctx.dataIndex]; return v!==null && v>100; }",
+                        "formatter": "function(v,ctx){ return v+'\\n'+ctx.dataset.timeLabels[ctx.dataIndex]; }",
                         "backgroundColor": "#e53935",
-                        "borderRadius": 4,
+                        "borderRadius": 3,
                         "color": "white",
                         "font": {"size": 9, "weight": "bold"},
-                        "padding": {"top": 3, "bottom": 3, "left": 5, "right": 5},
+                        "padding": 3,
                         "anchor": "end",
-                        "align": "top",
-                        "offset": 4
+                        "align": "top"
                     }
                 },
                 {
-                    "label": "Biñan, Laguna",
+                    "label": "Biñan",
                     "data": bin_values,
                     "borderColor": "#fb8c00",
-                    "backgroundColor": "rgba(251,140,0,0.08)",
+                    "borderWidth": 2,
                     "fill": False,
                     "pointBackgroundColor": point_colors(bin_values, "#fb8c00"),
-                    "pointBorderColor": point_colors(bin_values, "#fb8c00"),
                     "pointRadius": point_radii(bin_values),
-                    "pointHoverRadius": 7,
-                    "borderWidth": 2,
                     "tension": 0.3,
+                    "spanGaps": True,
                     "timeLabels": bin_times,
                     "datalabels": {
-                        "display": "function(ctx){ var v = ctx.dataset.data[ctx.dataIndex]; return v !== null && v > 100; }",
-                        "formatter": "function(val, ctx){ return val + '\\n@ ' + ctx.dataset.timeLabels[ctx.dataIndex]; }",
+                        "display": "function(ctx){ var v=ctx.dataset.data[ctx.dataIndex]; return v!==null && v>100; }",
+                        "formatter": "function(v,ctx){ return v+'\\n'+ctx.dataset.timeLabels[ctx.dataIndex]; }",
                         "backgroundColor": "#e53935",
-                        "borderRadius": 4,
+                        "borderRadius": 3,
                         "color": "white",
                         "font": {"size": 9, "weight": "bold"},
-                        "padding": {"top": 3, "bottom": 3, "left": 5, "right": 5},
+                        "padding": 3,
                         "anchor": "end",
-                        "align": "top",
-                        "offset": 4
+                        "align": "top"
                     }
                 },
                 {
-                    "label": "Threshold (AQI 100)",
-                    "data": threshold_data,
+                    "label": "Threshold (100)",
+                    "data": [100] * len(labels),
                     "borderColor": "#e53935",
-                    "borderDash": [6, 4],
-                    "borderWidth": 1.5,
+                    "borderDash": [5, 5],
+                    "borderWidth": 1,
                     "pointRadius": 0,
                     "fill": False,
                     "datalabels": {"display": False}
@@ -295,47 +309,49 @@ def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
                 "y": {
                     "min": 0,
                     "max": max_y,
+                    "grid": {"color": "#e0e0e0"},
+                    "ticks": {"color": "#555", "font": {"family": "Arial", "size": 11}},
                     "title": {
                         "display": True,
-                        "text": "AQI (0-500 Scale)",
+                        "text": "AQI (0-500)",
                         "color": "#555",
-                        "font": {"size": 12, "family": "Arial"}
-                    },
-                    "grid": {"color": "#e0e0e0"},
-                    "ticks": {"color": "#555", "font": {"family": "Arial"}}
+                        "font": {"family": "Arial", "size": 11}
+                    }
                 },
                 "x": {
+                    "grid": {"display": False},
                     "ticks": {
+                        "color": "#555",
+                        "font": {"family": "Arial", "size": 10},
                         "maxRotation": 45,
                         "autoSkip": True,
-                        "maxTicksLimit": 15,
-                        "color": "#555",
-                        "font": {"family": "Arial", "size": 10}
-                    },
-                    "grid": {"color": "#e0e0e0"}
+                        "maxTicksLimit": 12
+                    }
                 }
             },
             "plugins": {
                 "legend": {
-                    "display": True,
                     "position": "top",
                     "labels": {
                         "color": "#333",
                         "font": {"family": "Arial", "size": 12},
                         "usePointStyle": True,
-                        "padding": 20
+                        "padding": 20,
+                        "boxWidth": 8
                     }
                 }
             },
             "layout": {
-                "padding": {"top": 40, "right": 20, "bottom": 10, "left": 10}
+                "padding": {"top": 35, "right": 15, "bottom": 5, "left": 5}
             }
         }
     }
     try:
-        create_url = "https://quickchart.io/chart/create"
-        payload = {"chart": chart_config, "width": 900, "height": 420, "backgroundColor": "white"}
-        response = requests.post(create_url, json=payload, timeout=15)
+        response = requests.post(
+            "https://quickchart.io/chart/create",
+            json={"chart": chart_config, "width": 860, "height": 380, "backgroundColor": "white"},
+            timeout=15
+        )
         response.raise_for_status()
         result = response.json()
         if result.get("success"):
@@ -343,7 +359,7 @@ def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
     except RequestException as e:
         logger.warning(f"QuickChart POST failed, falling back to URL method: {e}")
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?w=900&h=420&bkg=white&c={encoded}"
+    return f"https://quickchart.io/chart?w=860&h=380&bkg=white&c={encoded}"
 # =========================
 # BUILD HTML EMAIL
 # =========================
@@ -387,10 +403,9 @@ def build_html_email():
             .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 10px; }
             .locations-row { width: 100%; border-collapse: collapse; }
             .trend-section { margin: 20px; padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
-            .trend-title { font-size: 16px; font-weight: bold; color: #333; margin: 0 0 6px 0; }
+            .trend-title { font-size: 16px; font-weight: bold; color: #333; margin: 0 0 4px 0; }
             .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 15px 0; }
-            .trend-img { width: 100%; max-width: 900px; border-radius: 6px; border: 1px solid #e0e0e0; display: block; }
-            .trend-legend { font-size: 11px; color: #999; margin-top: 8px; text-align: center; }
+            .trend-img { width: 100%; max-width: 860px; border-radius: 6px; border: 1px solid #e0e0e0; display: block; }
         </style>
     </head>
     <body>
@@ -412,7 +427,7 @@ def build_html_email():
         aqi_level = aqi_data.get("aqi", 0)
         aqi_info = aqi_map.get(aqi_level, aqi_map[3])
         pm2_5 = aqi_data.get("pm2_5", 0)
-        aqi_numeric = min(int(pm2_5 * 4.16), 500) if pm2_5 else 0
+        aqi_numeric = pm25_to_aqi(pm2_5)
         temp = weather_data.get("temp", "-") if weather_data else "-"
         wind_speed = weather_data.get("wind_speed", "-") if weather_data else "-"
         wind_deg = weather_data.get("wind_deg") if weather_data else None
@@ -500,13 +515,8 @@ def build_html_email():
         <div class="divider"></div>
         <div class="trend-section">
             <p class="trend-title">📈 30-Day AQI Trend</p>
-            <p class="trend-subtitle">Daily peak AQI values (0–500 scale) · Philippines Time · Red points &amp; labels indicate days exceeding AQI 100</p>
-            <img src="{chart_url}" alt="30-day AQI trend for Calamba and Biñan" class="trend-img" />
-            <p class="trend-legend">
-                <span style="color:#667eea;">&#9644;</span> Calamba, Laguna &nbsp;&nbsp;
-                <span style="color:#fb8c00;">&#9644;</span> Biñan, Laguna &nbsp;&nbsp;
-                <span style="color:#e53935;">- - -</span> Threshold (AQI 100)
-            </p>
+            <p class="trend-subtitle">Daily peak AQI (0–500 scale, EPA formula) · Philippines Time · Red points indicate days exceeding AQI 100</p>
+            <img src="{chart_url}" alt="30-day AQI trend" class="trend-img" />
         </div>
         """
     else:
