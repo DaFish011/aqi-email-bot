@@ -53,7 +53,6 @@ aqi_map = {
 # PM2.5 → AQI (EPA Formula)
 # =========================
 def pm25_to_aqi(pm25):
-    """Convert PM2.5 µg/m³ to AQI using the EPA piecewise linear formula."""
     if pm25 is None or pm25 < 0:
         return 0
     breakpoints = [
@@ -139,7 +138,8 @@ def get_bearing(lat1, lon1, lat2, lon2):
     bearing = math.degrees(math.atan2(x, y))
     return (bearing + 360) % 360
 def bearing_to_direction(bearing):
-    directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
     return directions[round(bearing / 22.5) % 16]
 def is_wind_towards_taal(wind_deg, bearing_to_taal):
     diff = abs(wind_deg - bearing_to_taal)
@@ -194,53 +194,58 @@ def get_aqi_history(lat, lon, days=30):
         response.raise_for_status()
         return response.json().get("list", [])
     except RequestException as e:
-        logger.error(f"Failed to fetch AQI history for ({lat},{lon}): {e}")
+        logger.error(f"Failed to fetch AQI history: {e}")
         return []
-def compute_daily_peak_aqi(history_list):
-    """Find the daily peak AQI (EPA formula from PM2.5) and the PH time it occurred."""
+def compute_daily_data(history_list, current_pm25):
+    """
+    Past days  → daily average AQI (EPA formula from PM2.5).
+    Today      → live current AQI value passed in as current_pm25.
+    Skips today's readings from history to avoid mixing live + historical.
+    """
+    today_key = (datetime.utcnow() + PH_OFFSET).strftime("%Y-%m-%d")
     daily = {}
     for entry in history_list:
         dt_utc = datetime.utcfromtimestamp(entry["dt"])
         dt_ph = dt_utc + PH_OFFSET
         day_key = dt_ph.strftime("%Y-%m-%d")
-        day_label = dt_ph.strftime("%b %d")
+        if day_key == today_key:
+            continue  # today handled separately via live API
         pm2_5 = entry.get("components", {}).get("pm2_5") or 0
         aqi_val = pm25_to_aqi(pm2_5)
-        hour_str = dt_ph.strftime("%I:%M %p").lstrip("0") or "12:00 AM"
-        if day_key not in daily or aqi_val > daily[day_key]["value"]:
-            daily[day_key] = {"label": day_label, "value": aqi_val, "time": hour_str}
+        if day_key not in daily:
+            daily[day_key] = {"label": dt_ph.strftime("%b %d"), "readings": []}
+        daily[day_key]["readings"].append(aqi_val)
     sorted_keys = sorted(daily.keys())
     labels = [daily[k]["label"] for k in sorted_keys]
-    values = [daily[k]["value"] for k in sorted_keys]
-    times = [daily[k]["time"] for k in sorted_keys]
-    return labels, values, times
-def align_datasets(cal_labels, cal_values, cal_times, bin_labels, bin_values, bin_times):
+    values = [round(sum(daily[k]["readings"]) / len(daily[k]["readings"])) for k in sorted_keys]
+    # Append today's live value
+    if current_pm25 is not None:
+        today_aqi = pm25_to_aqi(current_pm25)
+        today_label = (datetime.utcnow() + PH_OFFSET).strftime("%b %d")
+        labels.append(today_label)
+        values.append(today_aqi)
+    return labels, values
+def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
+    """Align both datasets to a unified sorted x-axis."""
     all_labels = sorted(
         set(cal_labels) | set(bin_labels),
         key=lambda d: datetime.strptime(d, "%b %d").replace(year=datetime.utcnow().year)
     )
-    cal_map = {l: (v, t) for l, v, t in zip(cal_labels, cal_values, cal_times)}
-    bin_map = {l: (v, t) for l, v, t in zip(bin_labels, bin_values, bin_times)}
-    merged_cal_values, merged_cal_times = [], []
-    merged_bin_values, merged_bin_times = [], []
-    for label in all_labels:
-        cv, ct = cal_map.get(label, (None, "-"))
-        bv, bt = bin_map.get(label, (None, "-"))
-        merged_cal_values.append(cv)
-        merged_cal_times.append(ct)
-        merged_bin_values.append(bv)
-        merged_bin_times.append(bt)
-    return all_labels, merged_cal_values, merged_cal_times, merged_bin_values, merged_bin_times
+    cal_map = dict(zip(cal_labels, cal_values))
+    bin_map = dict(zip(bin_labels, bin_values))
+    merged_cal = [cal_map.get(l) for l in all_labels]
+    merged_bin = [bin_map.get(l) for l in all_labels]
+    return all_labels, merged_cal, merged_bin
 # =========================
 # BUILD TREND CHART URL
 # =========================
-def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
+def build_trend_chart_url(labels, cal_values, bin_values):
     def point_colors(values, base):
         return ["#e53935" if (v is not None and v > 100) else base for v in values]
     def point_radii(values):
-        return [5 if (v is not None and v > 100) else 2 for v in values]
+        return [5 if (v is not None and v > 100) else 3 for v in values]
     all_valid = [v for v in cal_values + bin_values if v is not None]
-    max_y = max(max(all_valid) if all_valid else 100, 110) + 20
+    max_y = max(max(all_valid) if all_valid else 100, 100) + 30
     chart_config = {
         "type": "line",
         "data": {
@@ -256,15 +261,14 @@ def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
                     "pointRadius": point_radii(cal_values),
                     "tension": 0.3,
                     "spanGaps": True,
-                    "timeLabels": cal_times,
                     "datalabels": {
-                        "display": "function(ctx){ var v=ctx.dataset.data[ctx.dataIndex]; return v!==null && v>100; }",
-                        "formatter": "function(v,ctx){ return v+'\\n'+ctx.dataset.timeLabels[ctx.dataIndex]; }",
+                        "display": True,
+                        "formatter": "function(v){ return (v !== null && v > 100) ? v : null; }",
                         "backgroundColor": "#e53935",
                         "borderRadius": 3,
                         "color": "white",
-                        "font": {"size": 9, "weight": "bold"},
-                        "padding": 3,
+                        "font": {"size": 10, "weight": "bold"},
+                        "padding": 4,
                         "anchor": "end",
                         "align": "top"
                     }
@@ -279,15 +283,14 @@ def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
                     "pointRadius": point_radii(bin_values),
                     "tension": 0.3,
                     "spanGaps": True,
-                    "timeLabels": bin_times,
                     "datalabels": {
-                        "display": "function(ctx){ var v=ctx.dataset.data[ctx.dataIndex]; return v!==null && v>100; }",
-                        "formatter": "function(v,ctx){ return v+'\\n'+ctx.dataset.timeLabels[ctx.dataIndex]; }",
+                        "display": True,
+                        "formatter": "function(v){ return (v !== null && v > 100) ? v : null; }",
                         "backgroundColor": "#e53935",
                         "borderRadius": 3,
                         "color": "white",
-                        "font": {"size": 9, "weight": "bold"},
-                        "padding": 3,
+                        "font": {"size": 10, "weight": "bold"},
+                        "padding": 4,
                         "anchor": "end",
                         "align": "top"
                     }
@@ -297,7 +300,7 @@ def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
                     "data": [100] * len(labels),
                     "borderColor": "#e53935",
                     "borderDash": [5, 5],
-                    "borderWidth": 1,
+                    "borderWidth": 1.5,
                     "pointRadius": 0,
                     "fill": False,
                     "datalabels": {"display": False}
@@ -310,7 +313,10 @@ def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
                     "min": 0,
                     "max": max_y,
                     "grid": {"color": "#e0e0e0"},
-                    "ticks": {"color": "#555", "font": {"family": "Arial", "size": 11}},
+                    "ticks": {
+                        "color": "#555",
+                        "font": {"family": "Arial", "size": 11}
+                    },
                     "title": {
                         "display": True,
                         "text": "AQI (0-500)",
@@ -418,9 +424,12 @@ def build_html_email():
             <tr>
     """
     location_cards = []
+    fetched_aqi = {}
     for loc in locations:
         aqi_data = get_aqi_data(loc["lat"], loc["lon"])
         weather_data = get_weather_data(loc["lat"], loc["lon"])
+        # Store for reuse in the trend chart
+        fetched_aqi[loc["name"]] = aqi_data
         if not aqi_data:
             logger.warning(f"No AQI data for {loc['name']}")
             continue
@@ -436,7 +445,6 @@ def build_html_email():
         no2 = aqi_data.get("no2", "-")
         o3 = aqi_data.get("o3", "-")
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
-        direction_to_taal = bearing_to_direction(bearing_to_taal)
         wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
         taal_indicator = "TOWARDS" if wind_towards_taal else "AWAY FROM"
         is_alert = aqi_level >= 4
@@ -476,10 +484,7 @@ def build_html_email():
                     </tr>
                     </table>
                     <table class="pollutants-table">
-                        <tr>
-                            <th>Pollutant</th>
-                            <th>Level</th>
-                        </tr>
+                        <tr><th>Pollutant</th><th>Level</th></tr>
                         <tr><td>PM2.5</td><td>{pm2_5}</td></tr>
                         <tr><td>PM10</td><td>{pm10}</td></tr>
                         <tr><td>NO₂</td><td>{no2}</td></tr>
@@ -501,26 +506,29 @@ def build_html_email():
     logger.info("Fetching 30-day AQI history...")
     cal = locations[0]
     bin_ = locations[1]
+    cal_aqi_now = fetched_aqi.get(cal["name"])
+    bin_aqi_now = fetched_aqi.get(bin_["name"])
     cal_history = get_aqi_history(cal["lat"], cal["lon"])
     bin_history = get_aqi_history(bin_["lat"], bin_["lon"])
-    cal_labels, cal_values, cal_times = compute_daily_peak_aqi(cal_history)
-    bin_labels, bin_values, bin_times = compute_daily_peak_aqi(bin_history)
+    cal_pm25_today = cal_aqi_now.get("pm2_5") if cal_aqi_now else None
+    bin_pm25_today = bin_aqi_now.get("pm2_5") if bin_aqi_now else None
+    cal_labels, cal_values = compute_daily_data(cal_history, cal_pm25_today)
+    bin_labels, bin_values = compute_daily_data(bin_history, bin_pm25_today)
     if cal_labels or bin_labels:
-        labels, cal_values, cal_times, bin_values, bin_times = align_datasets(
-            cal_labels, cal_values, cal_times,
-            bin_labels, bin_values, bin_times
+        labels, cal_values, bin_values = merge_labels(
+            cal_labels, cal_values, bin_labels, bin_values
         )
-        chart_url = build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times)
+        chart_url = build_trend_chart_url(labels, cal_values, bin_values)
         html_content += f"""
         <div class="divider"></div>
         <div class="trend-section">
             <p class="trend-title">📈 30-Day AQI Trend</p>
-            <p class="trend-subtitle">Daily peak AQI (0–500 scale, EPA formula) · Philippines Time · Red points indicate days exceeding AQI 100</p>
+            <p class="trend-subtitle">Past 30 days: daily average AQI · Today: live reading · Red points = above threshold (100)</p>
             <img src="{chart_url}" alt="30-day AQI trend" class="trend-img" />
         </div>
         """
     else:
-        logger.warning("No AQI history data available for trend chart.")
+        logger.warning("No AQI history data for trend chart.")
     # =========================
     # TAAL NEWS SECTION
     # =========================
