@@ -5,14 +5,16 @@ from email.mime.multipart import MIMEMultipart
 import os
 import logging
 import math
+import time
+import json
+import urllib.parse
+from datetime import datetime, timedelta
 from requests.exceptions import RequestException
-
 # =========================
 # LOGGING
 # =========================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 # =========================
 # ENV VARIABLES
 # =========================
@@ -20,17 +22,13 @@ API_KEY = os.getenv("API_KEY")
 SENDER = os.getenv("EMAIL_USER")
 PASSWORD = os.getenv("EMAIL_PASS")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-
 RECEIVERS = [
     "verdegan011@gmail.com",
     "kroderno011@gmail.com"
 ]
-
-# Validate required env vars
 if not all([API_KEY, SENDER, PASSWORD]):
     logger.error("Missing required environment variables: API_KEY, EMAIL_USER, or EMAIL_PASS")
     exit(1)
-
 # =========================
 # LOCATIONS
 # =========================
@@ -38,11 +36,9 @@ locations = [
     {"name": "Calamba, Laguna", "lat": 14.2117, "lon": 121.1653},
     {"name": "Biñan, Laguna", "lat": 14.3386, "lon": 121.0807},
 ]
-
-# Taal Volcano coordinates
 TAAL_LAT = 14.3568
 TAAL_LON = 121.0064
-
+PH_OFFSET = timedelta(hours=8)
 # =========================
 # AQI LABELS & COLORS
 # =========================
@@ -53,7 +49,6 @@ aqi_map = {
     4: {"label": "Poor", "color": "#e53935", "advice": "Everyone should reduce prolonged outdoor activity."},
     5: {"label": "Very Poor", "color": "#6a1b9a", "advice": "Avoid outdoor activity. Wear N95 masks if necessary."}
 }
-
 # =========================
 # AQI FUNCTION (OPENWEATHER)
 # =========================
@@ -63,10 +58,8 @@ def get_aqi_data(lat, lon):
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-
         m = data["list"][0]["main"]
         c = data["list"][0]["components"]
-
         return {
             "aqi": m.get("aqi"),
             "pm2_5": c.get("pm2_5"),
@@ -74,14 +67,12 @@ def get_aqi_data(lat, lon):
             "no2": c.get("no2"),
             "o3": c.get("o3"),
         }
-
     except RequestException as e:
         logger.error(f"API request failed for AQI data: {e}")
         return None
     except KeyError as e:
         logger.error(f"Unexpected API response structure: {e}")
         return None
-
 # =========================
 # WEATHER FUNCTION (OPEN-METEO)
 # =========================
@@ -92,25 +83,20 @@ def get_weather_data(lat, lon):
             f"?latitude={lat}&longitude={lon}"
             f"&current_weather=true"
         )
-
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
         w = data.get("current_weather")
-
         if not w:
             return None
-
         return {
             "temp": w.get("temperature"),
             "wind_speed": w.get("windspeed"),
             "wind_deg": w.get("winddirection")
         }
-
     except RequestException as e:
         logger.error(f"API request failed for weather data: {e}")
         return None
-
 # =========================
 # WIND DIRECTION
 # =========================
@@ -122,40 +108,31 @@ def get_wind_direction(deg):
         return directions[int((float(deg) + 22.5) / 45) % 8]
     except (ValueError, TypeError):
         return "-"
-
 # =========================
 # BEARING CALCULATION (FOR TAAL)
 # =========================
 def get_bearing(lat1, lon1, lat2, lon2):
-    """Calculate bearing from point 1 to point 2"""
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
     dlon = lon2 - lon1
     x = math.sin(dlon) * math.cos(lat2)
     y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     bearing = math.degrees(math.atan2(x, y))
     return (bearing + 360) % 360
-
 def bearing_to_direction(bearing):
-    """Convert bearing (0-360) to compass direction"""
     directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
     return directions[round(bearing / 22.5) % 16]
-
 def is_wind_towards_taal(wind_deg, bearing_to_taal):
-    """Check if wind is blowing towards Taal (within 90 degree cone)"""
     diff = abs(wind_deg - bearing_to_taal)
     if diff > 180:
         diff = 360 - diff
     return diff < 90
-
 # =========================
 # FETCH TAAL NEWS
 # =========================
 def get_taal_news():
-    """Fetch recent Taal Volcano news from NewsAPI"""
     if not NEWS_API_KEY:
         logger.warning("NEWS_API_KEY not set. Skipping news fetch.")
         return []
-    
     try:
         url = "https://newsapi.org/v2/everything"
         params = {
@@ -168,31 +145,205 @@ def get_taal_news():
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
-        
         articles = data.get("articles", [])
-        
-        # Filter out irrelevant articles
         filtered = []
         exclude_keywords = ["pypi", "mcp", "data-mcp", "government data", "philippine", "software"]
-        
         for article in articles:
             title = article.get("title", "").lower()
             description = article.get("description", "").lower() if article.get("description") else ""
-            
-            # Skip if contains exclude keywords
             if any(keyword in title or keyword in description for keyword in exclude_keywords):
                 continue
-            
-            # Keep if it mentions Taal volcano specifically
             if "taal" in title or "taal" in description:
                 filtered.append(article)
-        
         return filtered[:5]
-        
     except RequestException as e:
         logger.error(f"Failed to fetch Taal news: {e}")
         return []
-
+# =========================
+# AQI HISTORY (OPENWEATHER)
+# =========================
+def get_aqi_history(lat, lon, days=30):
+    end = int(time.time())
+    start = int((datetime.utcnow() - timedelta(days=days)).timestamp())
+    try:
+        url = (
+            f"https://api.openweathermap.org/data/2.5/air_pollution/history"
+            f"?lat={lat}&lon={lon}&start={start}&end={end}&appid={API_KEY}"
+        )
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        return response.json().get("list", [])
+    except RequestException as e:
+        logger.error(f"Failed to fetch AQI history for ({lat},{lon}): {e}")
+        return []
+def compute_daily_peak_aqi(history_list):
+    daily = {}
+    for entry in history_list:
+        dt_utc = datetime.utcfromtimestamp(entry["dt"])
+        dt_ph = dt_utc + PH_OFFSET
+        day_key = dt_ph.strftime("%Y-%m-%d")
+        day_label = dt_ph.strftime("%b %d")
+        pm2_5 = entry.get("components", {}).get("pm2_5") or 0
+        aqi_val = min(int(pm2_5 * 4.16), 500)
+        hour_str = dt_ph.strftime("%I:%M %p").lstrip("0") or "12:00 AM"
+        if day_key not in daily or aqi_val > daily[day_key]["value"]:
+            daily[day_key] = {"label": day_label, "value": aqi_val, "time": hour_str}
+    sorted_keys = sorted(daily.keys())
+    labels = [daily[k]["label"] for k in sorted_keys]
+    values = [daily[k]["value"] for k in sorted_keys]
+    times = [daily[k]["time"] for k in sorted_keys]
+    return labels, values, times
+def align_datasets(cal_labels, cal_values, cal_times, bin_labels, bin_values, bin_times):
+    all_labels = sorted(
+        set(cal_labels) | set(bin_labels),
+        key=lambda d: datetime.strptime(d, "%b %d").replace(year=datetime.utcnow().year)
+    )
+    cal_map = {l: (v, t) for l, v, t in zip(cal_labels, cal_values, cal_times)}
+    bin_map = {l: (v, t) for l, v, t in zip(bin_labels, bin_values, bin_times)}
+    merged_cal_values, merged_cal_times = [], []
+    merged_bin_values, merged_bin_times = [], []
+    for label in all_labels:
+        cv, ct = cal_map.get(label, (None, "-"))
+        bv, bt = bin_map.get(label, (None, "-"))
+        merged_cal_values.append(cv)
+        merged_cal_times.append(ct)
+        merged_bin_values.append(bv)
+        merged_bin_times.append(bt)
+    return all_labels, merged_cal_values, merged_cal_times, merged_bin_values, merged_bin_times
+# =========================
+# BUILD TREND CHART URL
+# =========================
+def build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times):
+    def point_colors(values, base_color):
+        return ["#e53935" if (v is not None and v > 100) else base_color for v in values]
+    def point_radii(values):
+        return [6 if (v is not None and v > 100) else 3 for v in values]
+    threshold_data = [100] * len(labels)
+    all_non_none = [v for v in cal_values + bin_values if v is not None]
+    max_y = max(max(all_non_none) if all_non_none else 100, 100) + 30
+    chart_config = {
+        "type": "line",
+        "data": {
+            "labels": labels,
+            "datasets": [
+                {
+                    "label": "Calamba, Laguna",
+                    "data": cal_values,
+                    "borderColor": "#667eea",
+                    "backgroundColor": "rgba(102,126,234,0.08)",
+                    "fill": False,
+                    "pointBackgroundColor": point_colors(cal_values, "#667eea"),
+                    "pointBorderColor": point_colors(cal_values, "#667eea"),
+                    "pointRadius": point_radii(cal_values),
+                    "pointHoverRadius": 7,
+                    "borderWidth": 2,
+                    "tension": 0.3,
+                    "timeLabels": cal_times,
+                    "datalabels": {
+                        "display": "function(ctx){ var v = ctx.dataset.data[ctx.dataIndex]; return v !== null && v > 100; }",
+                        "formatter": "function(val, ctx){ return val + '\\n@ ' + ctx.dataset.timeLabels[ctx.dataIndex]; }",
+                        "backgroundColor": "#e53935",
+                        "borderRadius": 4,
+                        "color": "white",
+                        "font": {"size": 9, "weight": "bold"},
+                        "padding": {"top": 3, "bottom": 3, "left": 5, "right": 5},
+                        "anchor": "end",
+                        "align": "top",
+                        "offset": 4
+                    }
+                },
+                {
+                    "label": "Biñan, Laguna",
+                    "data": bin_values,
+                    "borderColor": "#fb8c00",
+                    "backgroundColor": "rgba(251,140,0,0.08)",
+                    "fill": False,
+                    "pointBackgroundColor": point_colors(bin_values, "#fb8c00"),
+                    "pointBorderColor": point_colors(bin_values, "#fb8c00"),
+                    "pointRadius": point_radii(bin_values),
+                    "pointHoverRadius": 7,
+                    "borderWidth": 2,
+                    "tension": 0.3,
+                    "timeLabels": bin_times,
+                    "datalabels": {
+                        "display": "function(ctx){ var v = ctx.dataset.data[ctx.dataIndex]; return v !== null && v > 100; }",
+                        "formatter": "function(val, ctx){ return val + '\\n@ ' + ctx.dataset.timeLabels[ctx.dataIndex]; }",
+                        "backgroundColor": "#e53935",
+                        "borderRadius": 4,
+                        "color": "white",
+                        "font": {"size": 9, "weight": "bold"},
+                        "padding": {"top": 3, "bottom": 3, "left": 5, "right": 5},
+                        "anchor": "end",
+                        "align": "top",
+                        "offset": 4
+                    }
+                },
+                {
+                    "label": "Threshold (AQI 100)",
+                    "data": threshold_data,
+                    "borderColor": "#e53935",
+                    "borderDash": [6, 4],
+                    "borderWidth": 1.5,
+                    "pointRadius": 0,
+                    "fill": False,
+                    "datalabels": {"display": False}
+                }
+            ]
+        },
+        "options": {
+            "scales": {
+                "y": {
+                    "min": 0,
+                    "max": max_y,
+                    "title": {
+                        "display": True,
+                        "text": "AQI (0-500 Scale)",
+                        "color": "#555",
+                        "font": {"size": 12, "family": "Arial"}
+                    },
+                    "grid": {"color": "#e0e0e0"},
+                    "ticks": {"color": "#555", "font": {"family": "Arial"}}
+                },
+                "x": {
+                    "ticks": {
+                        "maxRotation": 45,
+                        "autoSkip": True,
+                        "maxTicksLimit": 15,
+                        "color": "#555",
+                        "font": {"family": "Arial", "size": 10}
+                    },
+                    "grid": {"color": "#e0e0e0"}
+                }
+            },
+            "plugins": {
+                "legend": {
+                    "display": True,
+                    "position": "top",
+                    "labels": {
+                        "color": "#333",
+                        "font": {"family": "Arial", "size": 12},
+                        "usePointStyle": True,
+                        "padding": 20
+                    }
+                }
+            },
+            "layout": {
+                "padding": {"top": 40, "right": 20, "bottom": 10, "left": 10}
+            }
+        }
+    }
+    try:
+        create_url = "https://quickchart.io/chart/create"
+        payload = {"chart": chart_config, "width": 900, "height": 420, "backgroundColor": "white"}
+        response = requests.post(create_url, json=payload, timeout=15)
+        response.raise_for_status()
+        result = response.json()
+        if result.get("success"):
+            return result.get("url")
+    except RequestException as e:
+        logger.warning(f"QuickChart POST failed, falling back to URL method: {e}")
+    encoded = urllib.parse.quote(json.dumps(chart_config))
+    return f"https://quickchart.io/chart?w=900&h=420&bkg=white&c={encoded}"
 # =========================
 # BUILD HTML EMAIL
 # =========================
@@ -235,6 +386,11 @@ def build_html_email():
             .alert-card { border-left-color: #d32f2f !important; background-color: #ffebee !important; }
             .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 10px; }
             .locations-row { width: 100%; border-collapse: collapse; }
+            .trend-section { margin: 20px; padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
+            .trend-title { font-size: 16px; font-weight: bold; color: #333; margin: 0 0 6px 0; }
+            .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 15px 0; }
+            .trend-img { width: 100%; max-width: 900px; border-radius: 6px; border: 1px solid #e0e0e0; display: block; }
+            .trend-legend { font-size: 11px; color: #999; margin-top: 8px; text-align: center; }
         </style>
     </head>
     <body>
@@ -246,69 +402,48 @@ def build_html_email():
             <table class="locations-row" cellpadding="0" cellspacing="20">
             <tr>
     """
-
     location_cards = []
-    
     for loc in locations:
         aqi_data = get_aqi_data(loc["lat"], loc["lon"])
         weather_data = get_weather_data(loc["lat"], loc["lon"])
-
         if not aqi_data:
             logger.warning(f"No AQI data for {loc['name']}")
             continue
-
-        # Get AQI level (1-5 scale)
         aqi_level = aqi_data.get("aqi", 0)
         aqi_info = aqi_map.get(aqi_level, aqi_map[3])
-        
-        # Convert PM2.5 to 0-500 scale
         pm2_5 = aqi_data.get("pm2_5", 0)
         aqi_numeric = min(int(pm2_5 * 4.16), 500) if pm2_5 else 0
-        
         temp = weather_data.get("temp", "-") if weather_data else "-"
         wind_speed = weather_data.get("wind_speed", "-") if weather_data else "-"
         wind_deg = weather_data.get("wind_deg") if weather_data else None
         wind_dir = get_wind_direction(wind_deg)
-
         pm10 = aqi_data.get("pm10", "-")
         no2 = aqi_data.get("no2", "-")
         o3 = aqi_data.get("o3", "-")
-
-        # Calculate bearing to Taal
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
         direction_to_taal = bearing_to_direction(bearing_to_taal)
-
-        # Check if wind is towards Taal
         wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
         taal_indicator = "TOWARDS" if wind_towards_taal else "AWAY FROM"
-
-        # Determine alert styling
         is_alert = aqi_level >= 4
         alert_class = "alert-card" if is_alert else ""
         alert_border_color = "#d32f2f" if is_alert else "#667eea"
         alert_message = "<div class='alert-message'>⚠️ ALERT: Air quality is poor or very poor</div>" if is_alert else ""
-
         card_html = f"""
                 <td style="width: 50%; padding: 20px; vertical-align: top;">
                 <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
                     <div class="location-name">📍 {loc['name']}</div>
-                    
                     {alert_message}
-                    
                     <div class="aqi-box" style="background-color: {aqi_info['color']};">
                         <div class="aqi-value">{aqi_level}</div>
                         <div class="aqi-label">{aqi_info['label']}</div>
                         <div class="aqi-pm">PM2.5: {aqi_numeric}/500</div>
                     </div>
-                    
                     <div class="aqi-advice">
                         💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
                     </div>
-                    
                     <div class="taal-info">
                         🌋 Wind direction: {wind_dir}. Air from your location is moving <strong>{taal_indicator} Taal</strong>
                     </div>
-                    
                     <table class="weather-grid">
                     <tr>
                         <td class="weather-cell">
@@ -325,48 +460,64 @@ def build_html_email():
                         </td>
                     </tr>
                     </table>
-                    
                     <table class="pollutants-table">
                         <tr>
                             <th>Pollutant</th>
                             <th>Level</th>
                         </tr>
-                        <tr>
-                            <td>PM2.5</td>
-                            <td>{pm2_5}</td>
-                        </tr>
-                        <tr>
-                            <td>PM10</td>
-                            <td>{pm10}</td>
-                        </tr>
-                        <tr>
-                            <td>NO₂</td>
-                            <td>{no2}</td>
-                        </tr>
-                        <tr>
-                            <td>O₃</td>
-                            <td>{o3}</td>
-                        </tr>
+                        <tr><td>PM2.5</td><td>{pm2_5}</td></tr>
+                        <tr><td>PM10</td><td>{pm10}</td></tr>
+                        <tr><td>NO₂</td><td>{no2}</td></tr>
+                        <tr><td>O₃</td><td>{o3}</td></tr>
                     </table>
                 </div>
                 </td>
         """
         location_cards.append(card_html)
-
-    # Add all location cards
     for card in location_cards:
         html_content += card
-    
     html_content += """
             </tr>
             </table>
     """
-
-    # Add Taal News Section
+    # =========================
+    # 30-DAY AQI TREND CHART
+    # =========================
+    logger.info("Fetching 30-day AQI history...")
+    cal = locations[0]
+    bin_ = locations[1]
+    cal_history = get_aqi_history(cal["lat"], cal["lon"])
+    bin_history = get_aqi_history(bin_["lat"], bin_["lon"])
+    cal_labels, cal_values, cal_times = compute_daily_peak_aqi(cal_history)
+    bin_labels, bin_values, bin_times = compute_daily_peak_aqi(bin_history)
+    if cal_labels or bin_labels:
+        labels, cal_values, cal_times, bin_values, bin_times = align_datasets(
+            cal_labels, cal_values, cal_times,
+            bin_labels, bin_values, bin_times
+        )
+        chart_url = build_trend_chart_url(labels, cal_values, cal_times, bin_values, bin_times)
+        html_content += f"""
+        <div class="divider"></div>
+        <div class="trend-section">
+            <p class="trend-title">📈 30-Day AQI Trend</p>
+            <p class="trend-subtitle">Daily peak AQI values (0–500 scale) · Philippines Time · Red points &amp; labels indicate days exceeding AQI 100</p>
+            <img src="{chart_url}" alt="30-day AQI trend for Calamba and Biñan" class="trend-img" />
+            <p class="trend-legend">
+                <span style="color:#667eea;">&#9644;</span> Calamba, Laguna &nbsp;&nbsp;
+                <span style="color:#fb8c00;">&#9644;</span> Biñan, Laguna &nbsp;&nbsp;
+                <span style="color:#e53935;">- - -</span> Threshold (AQI 100)
+            </p>
+        </div>
+        """
+    else:
+        logger.warning("No AQI history data available for trend chart.")
+    # =========================
+    # TAAL NEWS SECTION
+    # =========================
     news_articles = get_taal_news()
-    
     if news_articles:
         html_content += """
+        <div class="divider"></div>
         <div class="news-section">
             <h3 class="news-title">🔔 Recent Taal Volcano News</h3>
         """
@@ -375,7 +526,6 @@ def build_html_email():
             description = article.get("description", "No description")
             url = article.get("url", "#")
             source = article.get("source", {}).get("name", "Unknown")
-            
             html_content += f"""
             <div class="news-article">
                 <a href="{url}" target="_blank">{title}</a><br>
@@ -383,17 +533,13 @@ def build_html_email():
                 <p class="news-desc">{description}</p>
             </div>
             """
-        
-        html_content += """
-        </div>
-        """
+        html_content += "</div>"
     else:
         html_content += """
         <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
             <p style="color: #999; margin: 0;">ℹ️ No recent Taal activity reported</p>
         </div>
         """
-
     html_content += """
             <div class="footer">
                 <p>Data sources: OpenWeatherMap API, Open-Meteo API, NewsAPI</p>
@@ -403,37 +549,28 @@ def build_html_email():
     </body>
     </html>
     """
-
     return html_content
-
 # =========================
 # SEND EMAIL
 # =========================
 def send_email():
     try:
         html_email = build_html_email()
-        
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "🌍 Weekly AQI & Weather Report (Laguna)"
         msg["From"] = SENDER
         msg["To"] = ", ".join(RECEIVERS)
-        
-        # Attach HTML
         msg.attach(MIMEText(html_email, "html"))
-        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SENDER, PASSWORD)
             server.sendmail(SENDER, RECEIVERS, msg.as_string())
-        
         logger.info("Email sent successfully!")
-
     except smtplib.SMTPAuthenticationError:
         logger.error("SMTP authentication failed. Check EMAIL_USER and EMAIL_PASS.")
     except smtplib.SMTPException as e:
         logger.error(f"SMTP error occurred: {e}")
     except Exception as e:
         logger.error(f"Unexpected error while sending email: {e}")
-
 # =========================
 # MAIN
 # =========================
