@@ -256,15 +256,16 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # BUILD TREND CHART URL (soft design, muted alarm threshold)
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    def point_colors(values, base):
-        # Muted alarm color for points above threshold, otherwise base
-        return ["#ff7043" if (v is not None and v > 100) else base for v in values]
+    def point_colors(values, base_color, alert_color="#ff7043"):
+        return [alert_color if (v is not None and v > 100) else base_color for v in values]
 
-    def point_radii(values):
-        return [6 if (v is not None and v > 100) else 3 for v in values]
+    def point_radii(values, base=3, alert=6):
+        return [alert if (v is not None and v > 100) else base for v in values]
 
+    # Ensure lists exist and compute a reasonable max Y
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
-    max_y = max(max(all_valid) if all_valid else 100, 100) + 30
+    max_data = max(all_valid) if all_valid else 100
+    max_y = max(max_data, 100) + 30
 
     chart_config = {
         "type": "line",
@@ -274,52 +275,32 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 {
                     "label": "Calamba",
                     "data": cal_values,
-                    "borderColor": "rgba(102,126,234,0.85)",
-                    "backgroundColor": "rgba(102,126,234,0.08)",
+                    "borderColor": "rgba(102,126,234,0.95)",
+                    "backgroundColor": "rgba(102,126,234,0.12)",
                     "borderWidth": 2.5,
-                    "fill": False,
+                    "fill": True,
                     "pointBackgroundColor": point_colors(cal_values, "rgba(102,126,234,0.95)"),
                     "pointBorderColor": "rgba(255,255,255,0.9)",
                     "pointRadius": point_radii(cal_values),
                     "pointStyle": "circle",
                     "tension": 0.28,
                     "spanGaps": True,
-                    "datalabels": {
-                        "display": True,
-                        "formatter": "function(v){ return (v !== null && v > 100) ? v : null; }",
-                        "backgroundColor": "#ff7043",
-                        "borderRadius": 6,
-                        "color": "white",
-                        "font": {"size": 10, "weight": "bold"},
-                        "padding": 6,
-                        "anchor": "end",
-                        "align": "top"
-                    }
+                    "order": 1
                 },
                 {
                     "label": "Biñan",
                     "data": bin_values,
-                    "borderColor": "rgba(251,140,0,0.9)",
-                    "backgroundColor": "rgba(251,140,0,0.08)",
+                    "borderColor": "rgba(251,140,0,0.95)",
+                    "backgroundColor": "rgba(251,140,0,0.10)",
                     "borderWidth": 2.5,
-                    "fill": False,
+                    "fill": True,
                     "pointBackgroundColor": point_colors(bin_values, "rgba(251,140,0,0.95)"),
                     "pointBorderColor": "rgba(255,255,255,0.9)",
                     "pointRadius": point_radii(bin_values),
                     "pointStyle": "circle",
                     "tension": 0.28,
                     "spanGaps": True,
-                    "datalabels": {
-                        "display": True,
-                        "formatter": "function(v){ return (v !== null && v > 100) ? v : null; }",
-                        "backgroundColor": "#ff7043",
-                        "borderRadius": 6,
-                        "color": "white",
-                        "font": {"size": 10, "weight": "bold"},
-                        "padding": 6,
-                        "anchor": "end",
-                        "align": "top"
-                    }
+                    "order": 1
                 },
                 {
                     "label": "Threshold (100)",
@@ -329,33 +310,34 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "borderWidth": 1.5,
                     "pointRadius": 0,
                     "fill": False,
-                    "datalabels": {"display": False}
+                    "order": 0
                 }
             ]
         },
         "options": {
-            "backgroundColor": "#fafafa",  # very light gray background
+            "backgroundColor": "#fafafa",
+            "layout": {"padding": {"top": 24, "right": 18, "bottom": 18, "left": 12}},
             "scales": {
                 "y": {
                     "min": 0,
                     "max": max_y,
-                    "grid": {"color": "#f0f0f0"},
+                    "grid": {"color": "#ececec", "lineWidth": 1},
                     "ticks": {
-                        "color": "#666",
-                        "font": {"family": "Arial", "size": 11}
+                        "color": "#555",
+                        "font": {"family": "Inter, Arial, sans-serif", "size": 12}
                     },
                     "title": {
                         "display": True,
-                        "text": "AQI (0-500)",
-                        "color": "#666",
-                        "font": {"family": "Arial", "size": 11}
+                        "text": "AQI (0–500)",
+                        "color": "#555",
+                        "font": {"family": "Inter, Arial, sans-serif", "size": 12}
                     }
                 },
                 "x": {
                     "grid": {"display": False},
                     "ticks": {
-                        "color": "#666",
-                        "font": {"family": "Arial", "size": 10},
+                        "color": "#555",
+                        "font": {"family": "Inter, Arial, sans-serif", "size": 11},
                         "maxRotation": 45,
                         "autoSkip": True,
                         "maxTicksLimit": 12
@@ -364,22 +346,39 @@ def build_trend_chart_url(labels, cal_values, bin_values):
             },
             "plugins": {
                 "legend": {
-                    "position": "top",
+                    "position": "bottom",
                     "labels": {
                         "color": "#333",
-                        "font": {"family": "Arial", "size": 12},
+                        "font": {"family": "Inter, Arial, sans-serif", "size": 13, "weight": "500"},
                         "usePointStyle": True,
-                        "padding": 16,
-                        "boxWidth": 8
+                        "pointStyle": "circle",
+                        "padding": 18,
+                        "boxWidth": 10
                     }
                 },
                 "datalabels": {
-                    "display": True
+                    "display": True,
+                    "formatter": "function(v){ return (v !== null && v > 100) ? v : null; }",
+                    "backgroundColor": "#ff7043",
+                    "borderRadius": 6,
+                    "color": "white",
+                    "font": {"size": 11, "weight": "bold"},
+                    "padding": 6,
+                    "anchor": "end",
+                    "align": "top"
+                },
+                "tooltip": {
+                    "enabled": True,
+                    "backgroundColor": "rgba(0,0,0,0.8)",
+                    "titleFont": {"family": "Inter, Arial, sans-serif", "size": 12, "weight": "600"},
+                    "bodyFont": {"family": "Inter, Arial, sans-serif", "size": 11}
                 }
             },
-            "layout": {
-                "padding": {"top": 30, "right": 12, "bottom": 6, "left": 6}
-            }
+            "elements": {
+                "point": {"hoverRadius": 8},
+                "line": {"capBezierPoints": True}
+            },
+            "interaction": {"mode": "nearest", "intersect": False}
         }
     }
 
@@ -393,8 +392,8 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         result = response.json()
         if result.get("success"):
             return result.get("url")
-    except RequestException as e:
-        logger.warning(f"QuickChart POST failed, falling back to URL method: {e}")
+    except RequestException:
+        pass
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&bkg=white&c={encoded}"
