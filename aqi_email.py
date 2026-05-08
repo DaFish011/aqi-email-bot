@@ -255,20 +255,13 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # =========================
 # BUILD TREND CHART URL (soft design, muted alarm threshold)
 # =========================
+import json
+import urllib.parse
+
+# --- Chart builder ---
 def build_trend_chart_url(labels, cal_values, bin_values):
-    """
-    Build a QuickChart URL for the 30-day AQI trend.
-
-    - Keeps x-axis labels exactly as provided (no date format changes).
-    - Softer, muted colors for lines/fills and labels.
-    - Modern legend with circular swatches.
-    - Dashed threshold line at 100; the y-axis tick for 100 is emphasized via a tick callback.
-    - Data labels shown ONLY for points with AQI > 100 (applies to all points, including today).
-    """
-
-    # Muted palette
-    MUTED_CAL = "#5c6bc0"    # soft indigo
-    MUTED_BIN = "#ffb74d"    # soft amber
+    MUTED_CAL = "#5c6bc0"
+    MUTED_BIN = "#ffb74d"
     ALERT_RED = "#e53935"
     BG_FILL_CAL = "rgba(92,107,192,0.10)"
     BG_FILL_BIN = "rgba(255,183,77,0.08)"
@@ -279,12 +272,10 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     def base_point_radii(values):
         return [5 if (v is not None and v > 100) else 3 for v in (values or [])]
 
-    # sensible max_y for AQI readability
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
     max_y = max(max(all_valid) if all_valid else 100, 100) + 30
     max_y = min(max_y, 300)
 
-    # Emphasize last point visually (radius only) but do NOT force a label if <=100
     def emphasize_last(radii):
         if not radii:
             return radii
@@ -298,7 +289,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     chart_config = {
         "type": "line",
         "data": {
-            # Keep labels exactly as provided by the caller
             "labels": labels or [],
             "datasets": [
                 {
@@ -346,7 +336,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "font": {"size": 12}
                     }
                 },
-                # datalabels: show only for values > 100
                 "datalabels": {
                     "display": "function(context){ var v = context.dataset.data[context.dataIndex]; return (v !== null && v !== undefined && v > 100); }",
                     "color": "#fff",
@@ -357,7 +346,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "align": "top",
                     "anchor": "end"
                 },
-                # annotation: dashed threshold line at 100 (no filled band)
                 "annotation": {
                     "annotations": {
                         "threshold_line": {
@@ -373,7 +361,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 }
             },
             "scales": {
-                # Keep x-axis as categorical so labels remain exactly as provided
                 "x": {
                     "type": "category",
                     "grid": {"display": False},
@@ -385,7 +372,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "grid": {"color": "#f3f3f3"},
                     "ticks": {
                         "color": "#666",
-                        # Highlight the 100 tick label text only
                         "callback": "function(value){ return value === 100 ? '100 — Threshold' : value; }"
                     },
                     "title": {"display": True, "text": "AQI", "color": "#666", "font": {"size": 11}}
