@@ -265,7 +265,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         if not radii:
             return radii
         r = radii[:]
-        r[-1] = max(r[-1], 9)
+        r[-1] = max(r[-1], 9)  # emphasize last point
         return r
 
     cal_radii = emphasize_last(base_point_radii(cal_values))
@@ -421,6 +421,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+
 
 # =========================
 # BUILD HTML EMAIL
