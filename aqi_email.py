@@ -256,90 +256,145 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # BUILD TREND CHART URL (soft design, muted alarm threshold)
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    def point_colors(values, base, alert="#e53935"):
-        return [alert if (v and v > 100) else base for v in values]
+    # Muted palette and helpers
+    MUTED_CAL = "#5c6bc0"   # softer indigo
+    MUTED_BIN = "#ffb74d"   # softer amber
+    ALERT_RED = "#e53935"
+    BG_FILL_CAL = "rgba(92,107,192,0.10)"
+    BG_FILL_BIN = "rgba(255,183,77,0.08)"
 
-    def point_radii(values):
-        return [6 if (v and v > 100) else 3 for v in values]
+    def point_colors(values, base):
+        return [ALERT_RED if (v and v > 100) else base for v in (values or [])]
 
+    def base_point_radii(values):
+        return [5 if (v and v > 100) else 3 for v in (values or [])]
+
+    # Compute sensible max_y
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
     max_y = max(max(all_valid) if all_valid else 100, 100) + 30
+    max_y = min(max_y, 300)
 
+    # Convert short labels ("May 01") to ISO dates for time axis if possible
+    iso_labels = []
+    year = datetime.utcnow().year
+    for lbl in labels or []:
+        try:
+            dt = datetime.strptime(f"{lbl} {year}", "%b %d %Y")
+            iso_labels.append(dt.isoformat())
+        except Exception:
+            iso_labels.append(lbl)
+
+    # Emphasize last point radius
+    def emphasize_last(radii):
+        if not radii:
+            return radii
+        r = radii[:]
+        r[-1] = max(r[-1], 8)
+        return r
+
+    cal_radii = emphasize_last(base_point_radii(cal_values))
+    bin_radii = emphasize_last(base_point_radii(bin_values))
+
+    # Chart config
     chart_config = {
         "type": "line",
         "data": {
-            "labels": labels,
+            "labels": iso_labels,
             "datasets": [
                 {
                     "label": "Calamba",
                     "data": cal_values,
-                    "borderColor": "#3f51b5",
-                    "backgroundColor": "rgba(63,81,181,0.08)",
-                    "borderWidth": 2.5,
-                    "fill": False,
-                    "pointBackgroundColor": point_colors(cal_values, "#3f51b5"),
-                    "pointRadius": point_radii(cal_values),
-                    "tension": 0.3
+                    "borderColor": MUTED_CAL,
+                    "backgroundColor": BG_FILL_CAL,
+                    "borderWidth": 1.6,
+                    "fill": True,
+                    "pointBackgroundColor": point_colors(cal_values, MUTED_CAL),
+                    "pointRadius": cal_radii,
+                    "tension": 0.28
                 },
                 {
                     "label": "Biñan",
                     "data": bin_values,
-                    "borderColor": "#fb8c00",
-                    "backgroundColor": "rgba(251,140,0,0.08)",
-                    "borderWidth": 2.5,
-                    "fill": False,
-                    "pointBackgroundColor": point_colors(bin_values, "#fb8c00"),
-                    "pointRadius": point_radii(bin_values),
-                    "tension": 0.3
-                },
-                {
-                    "label": "Threshold (100)",
-                    "data": [100] * len(labels),
-                    "borderColor": "#e53935",
-                    "borderDash": [6, 4],
-                    "borderWidth": 1.5,
-                    "pointRadius": 0,
-                    "fill": False
+                    "borderColor": MUTED_BIN,
+                    "backgroundColor": BG_FILL_BIN,
+                    "borderWidth": 1.6,
+                    "fill": True,
+                    "pointBackgroundColor": point_colors(bin_values, MUTED_BIN),
+                    "pointRadius": bin_radii,
+                    "tension": 0.28
                 }
             ]
         },
         "options": {
-            "backgroundColor": "#ffffff",
-            "scales": {
-                "y": {
-                    "min": 0,
-                    "max": max_y,
-                    "grid": {"color": "#f0f0f0"},
-                    "ticks": {"color": "#555", "font": {"family": "Inter, Arial", "size": 12}},
-                    "title": {"display": True, "text": "AQI (0–500)", "color": "#555"}
-                },
-                "x": {
-                    "grid": {"display": False},
-                    "ticks": {"color": "#555", "font": {"family": "Inter, Arial", "size": 11}}
-                }
-            },
+            "responsive": True,
+            "maintainAspectRatio": False,
             "plugins": {
+                "title": {
+                    "display": True,
+                    "text": "30 days: daily average AQI",
+                    "color": "#333",
+                    "font": {"size": 14, "weight": "600"}
+                },
                 "legend": {
                     "position": "bottom",
                     "labels": {
-                        "color": "#333",
-                        "font": {"family": "Inter, Arial", "size": 13, "weight": "500"},
                         "usePointStyle": True,
                         "pointStyle": "circle",
-                        "padding": 18
+                        "boxWidth": 10,
+                        "padding": 10,
+                        "color": "#444",
+                        "font": {"size": 12}
                     }
                 },
+                # datalabels: show only for values > 100
                 "datalabels": {
-                    "display": True,
-                    "formatter": "function(v){ return (v && v > 100) ? v : null; }",
-                    "backgroundColor": "#e53935",
+                    "display": "function(context){ return context.dataset.data[context.dataIndex] > 100; }",
+                    "color": "#fff",
+                    "backgroundColor": ALERT_RED,
                     "borderRadius": 4,
-                    "color": "white",
-                    "font": {"size": 11, "weight": "bold"},
-                    "padding": 4,
-                    "anchor": "end",
-                    "align": "top"
+                    "font": {"size": 11, "weight": "600"},
+                    "padding": 6,
+                    "align": "top",
+                    "anchor": "end"
+                },
+                # annotation: dashed threshold line at 100
+                "annotation": {
+                    "annotations": {
+                        "threshold_line": {
+                            "type": "line",
+                            "yMin": 100,
+                            "yMax": 100,
+                            "borderColor": ALERT_RED,
+                            "borderDash": [6, 4],
+                            "borderWidth": 1.2,
+                            "label": {
+                                "enabled": False
+                            }
+                        }
+                    }
                 }
+            },
+            "scales": {
+                "x": {
+                    "type": "time",
+                    "time": {"unit": "day", "tooltipFormat": "MMM dd"},
+                    "grid": {"display": False},
+                    "ticks": {"color": "#666", "maxRotation": 0, "autoSkip": True}
+                },
+                "y": {
+                    "min": 0,
+                    "max": max_y,
+                    "grid": {"color": "#f3f3f3"},
+                    "ticks": {
+                        "color": "#666",
+                        # Highlight the 100 tick label by returning a custom string for 100
+                        "callback": "function(value){ return value === 100 ? '100 — Threshold' : value; }"
+                    },
+                    "title": {"display": True, "text": "AQI", "color": "#666", "font": {"size": 11}}
+                }
+            },
+            "elements": {
+                "point": {"hoverRadius": 8}
             }
         }
     }
