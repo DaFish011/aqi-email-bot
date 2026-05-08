@@ -256,7 +256,6 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # BUILD TREND CHART URL
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    # Colors
     CAL_COLOR = "#00897b"   # teal
     BIN_COLOR = "#f57c00"   # orange
     ALERT_RED = "#d32f2f"
@@ -372,8 +371,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
-
-
 
 # =========================
 # BUILD HTML EMAIL
