@@ -246,7 +246,7 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
     return all_labels, merged_cal, merged_bin
 
 # =========================
-# BUILD TREND CHART URL
+# BUILD TREND CHART URL (FINAL FIXED)
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
     MUTED_CAL = "#5c6bc0"
@@ -265,7 +265,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         if not radii:
             return radii
         r = radii[:]
-        r[-1] = max(r[-1], 9)  # emphasize last point
+        r[-1] = max(r[-1], 9)
         return r
 
     cal_radii = emphasize_last(base_point_radii(cal_values))
@@ -310,7 +310,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 },
                 # helper dataset for Calamba labels (>100 only)
                 {
-                    "label": None,
                     "data": cal_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if v else "rgba(0,0,0,0)" for v in cal_helper],
@@ -318,6 +317,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "showLine": False,
                     "fill": False,
                     "spanGaps": True,
+                    "skipNull": True,
                     "datalabels": {
                         "display": True,
                         "color": "#fff",
@@ -333,7 +333,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 },
                 # helper dataset for Biñan labels (>100 only)
                 {
-                    "label": None,
                     "data": bin_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if v else "rgba(0,0,0,0)" for v in bin_helper],
@@ -341,6 +340,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "showLine": False,
                     "fill": False,
                     "spanGaps": True,
+                    "skipNull": True,
                     "datalabels": {
                         "display": True,
                         "color": "#fff",
@@ -369,7 +369,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "padding": {"top": 6, "bottom": 6}
                 },
                 "legend": {
-                    "position": "bottom",   # legend at bottom
+                    "position": "bottom",
                     "align": "center",
                     "labels": {
                         "usePointStyle": True,
@@ -389,7 +389,8 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "borderColor": ALERT_RED,
                             "borderDash": [6, 4],
                             "borderWidth": 1.6,
-                            "opacity": 0.95
+                            "opacity": 0.95,
+                            "label": {"enabled": False}
                         }
                     }
                 }
@@ -420,8 +421,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
-
-
 
 # =========================
 # BUILD HTML EMAIL
