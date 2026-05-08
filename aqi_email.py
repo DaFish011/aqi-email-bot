@@ -211,11 +211,6 @@ def get_aqi_history(lat, lon, days=30):
         return []
 
 def compute_daily_data(history_list, current_pm25):
-    """
-    Past days  → daily average AQI (EPA formula from PM2.5).
-    Today      → live current AQI value passed in as current_pm25.
-    Skips today's readings from history to avoid mixing live + historical.
-    """
     today_key = (datetime.utcnow() + PH_OFFSET).strftime("%Y-%m-%d")
     daily = {}
     for entry in history_list:
@@ -223,7 +218,7 @@ def compute_daily_data(history_list, current_pm25):
         dt_ph = dt_utc + PH_OFFSET
         day_key = dt_ph.strftime("%Y-%m-%d")
         if day_key == today_key:
-            continue  # today handled separately via live API
+            continue
         pm2_5 = entry.get("components", {}).get("pm2_5") or 0
         aqi_val = pm25_to_aqi(pm2_5)
         if day_key not in daily:
@@ -232,7 +227,6 @@ def compute_daily_data(history_list, current_pm25):
     sorted_keys = sorted(daily.keys())
     labels = [daily[k]["label"] for k in sorted_keys]
     values = [round(sum(daily[k]["readings"]) / len(daily[k]["readings"])) for k in sorted_keys]
-    # Append today's live value
     if current_pm25 is not None:
         today_aqi = pm25_to_aqi(current_pm25)
         today_label = (datetime.utcnow() + PH_OFFSET).strftime("%b %d")
@@ -241,7 +235,6 @@ def compute_daily_data(history_list, current_pm25):
     return labels, values
 
 def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
-    """Align both datasets to a unified sorted x-axis."""
     all_labels = sorted(
         set(cal_labels) | set(bin_labels),
         key=lambda d: datetime.strptime(d, "%b %d").replace(year=datetime.utcnow().year)
@@ -315,9 +308,8 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointRadius": bin_radii,
                     "tension": 0.24
                 },
-                # helper dataset for Calamba labels (only values >100)
                 {
-                    "label": None,
+                    "label": "",
                     "data": cal_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in cal_helper],
@@ -338,9 +330,8 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "hidden": True,
                     "showInLegend": False
                 },
-                # helper dataset for Biñan labels (only values >100)
                 {
-                    "label": None,
+                    "label": "",
                     "data": bin_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in bin_helper],
