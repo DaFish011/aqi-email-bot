@@ -299,22 +299,22 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "data": cal_values or [],
                     "borderColor": MUTED_CAL,
                     "backgroundColor": BG_FILL_CAL,
-                    "borderWidth": 1.6,
+                    "borderWidth": 1.2,
                     "fill": True,
                     "pointBackgroundColor": point_colors(cal_values, MUTED_CAL),
                     "pointRadius": cal_radii,
-                    "tension": 0.28
+                    "tension": 0.24
                 },
                 {
                     "label": "Biñan",
                     "data": bin_values or [],
                     "borderColor": MUTED_BIN,
                     "backgroundColor": BG_FILL_BIN,
-                    "borderWidth": 1.6,
+                    "borderWidth": 1.2,
                     "fill": True,
                     "pointBackgroundColor": point_colors(bin_values, MUTED_BIN),
                     "pointRadius": bin_radii,
-                    "tension": 0.28
+                    "tension": 0.24
                 },
                 # Invisible helper for Calamba labels (only points >100)
                 {
@@ -325,7 +325,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointRadius": [6 if (v is not None and v > 100) else 0 for v in cal_helper],
                     "showLine": False,
                     "fill": False,
-                    "stepped": False,
                     "spanGaps": True,
                     "datalabels": {
                         "display": True,
@@ -337,6 +336,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "align": "top",
                         "anchor": "end"
                     },
+                    "hidden": True,
                     "showInLegend": False
                 },
                 # Invisible helper for Biñan labels (only points >100)
@@ -348,7 +348,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointRadius": [6 if (v is not None and v > 100) else 0 for v in bin_helper],
                     "showLine": False,
                     "fill": False,
-                    "stepped": False,
                     "spanGaps": True,
                     "datalabels": {
                         "display": True,
@@ -360,6 +359,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "align": "top",
                         "anchor": "end"
                     },
+                    "hidden": True,
                     "showInLegend": False
                 }
             ]
@@ -367,12 +367,16 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
+            "layout": {
+                "padding": {"top": 12, "bottom": 8, "left": 8, "right": 8}
+            },
             "plugins": {
                 "title": {
                     "display": True,
                     "text": "30 days: daily average AQI",
                     "color": "#333",
-                    "font": {"size": 14, "weight": "600"}
+                    "font": {"size": 14, "weight": "600"},
+                    "padding": {"top": 6, "bottom": 6}
                 },
                 "legend": {
                     "position": "bottom",
@@ -380,7 +384,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "usePointStyle": True,
                         "pointStyle": "circle",
                         "boxWidth": 10,
-                        "padding": 10,
+                        "padding": 8,
                         "color": "#444",
                         "font": {"size": 12}
                     }
@@ -393,8 +397,10 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "yMax": 100,
                             "borderColor": ALERT_RED,
                             "borderDash": [6, 4],
-                            "borderWidth": 1.2,
-                            "label": {"enabled": False}
+                            "borderWidth": 1.4,
+                            "label": {
+                                "enabled": False
+                            }
                         }
                     }
                 }
