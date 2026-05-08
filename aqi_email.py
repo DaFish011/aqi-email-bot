@@ -246,13 +246,22 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
     return all_labels, merged_cal, merged_bin
 
 # =========================
-# BUILD TREND CHART URL (FINAL FIXED)
+# BUILD TREND CHART URL (REDESIGNED)
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    MUTED_CAL = "#5c6bc0"
-    MUTED_BIN = "#ffb74d"
+    """
+    Redesigned chart config:
+    - Legend at bottom (only Calamba & Biñan)
+    - Dashed red threshold line at y=100
+    - Invisible helper datasets (no 'label' key) used only for datalabels above threshold
+    - Muted indigo/amber palette, subtle fills, thin lines
+    - Emphasize last point
+    - skipNull on helpers to avoid ghost points
+    """
+    MUTED_CAL = "#3f51b5"      # slightly deeper indigo
+    MUTED_BIN = "#ffb74d"      # warm amber
     ALERT_RED = "#e53935"
-    BG_FILL_CAL = "rgba(92,107,192,0.10)"
+    BG_FILL_CAL = "rgba(63,81,181,0.10)"
     BG_FILL_BIN = "rgba(255,183,77,0.08)"
 
     def point_colors(values, base):
@@ -265,51 +274,58 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         if not radii:
             return radii
         r = radii[:]
-        r[-1] = max(r[-1], 9)  # emphasize last point
+        r[-1] = max(r[-1], 9)
         return r
 
     cal_radii = emphasize_last(base_point_radii(cal_values))
     bin_radii = emphasize_last(base_point_radii(bin_values))
 
     def helper_values_for_labels(values):
+        # return value only if >100, else None (so skipNull works)
         return [v if (v is not None and v > 100) else None for v in (values or [])]
 
     cal_helper = helper_values_for_labels(cal_values)
     bin_helper = helper_values_for_labels(bin_values)
 
+    # compute y-axis max with headroom
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
     max_y = max(max(all_valid) if all_valid else 100, 100) + 30
-    max_y = min(max_y, 300)
+    max_y = min(max_y, 400)
 
     chart_config = {
         "type": "line",
         "data": {
             "labels": labels or [],
             "datasets": [
+                # Calamba main series
                 {
                     "label": "Calamba",
                     "data": cal_values or [],
                     "borderColor": MUTED_CAL,
                     "backgroundColor": BG_FILL_CAL,
-                    "borderWidth": 1.2,
+                    "borderWidth": 1.25,
                     "fill": True,
                     "pointBackgroundColor": point_colors(cal_values, MUTED_CAL),
                     "pointRadius": cal_radii,
-                    "tension": 0.24
+                    "tension": 0.22,
+                    "order": 1
                 },
+                # Biñan main series
                 {
                     "label": "Biñan",
                     "data": bin_values or [],
                     "borderColor": MUTED_BIN,
                     "backgroundColor": BG_FILL_BIN,
-                    "borderWidth": 1.2,
+                    "borderWidth": 1.25,
                     "fill": True,
                     "pointBackgroundColor": point_colors(bin_values, MUTED_BIN),
                     "pointRadius": bin_radii,
-                    "tension": 0.24
+                    "tension": 0.22,
+                    "order": 1
                 },
                 # helper dataset for Calamba labels (>100 only)
                 {
+                    # intentionally no "label" key here — prevents legend entry
                     "data": cal_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if v else "rgba(0,0,0,0)" for v in cal_helper],
@@ -329,10 +345,12 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "anchor": "end"
                     },
                     "hidden": True,
-                    "showInLegend": False
+                    "showInLegend": False,
+                    "order": 2
                 },
                 # helper dataset for Biñan labels (>100 only)
                 {
+                    # intentionally no "label" key here — prevents legend entry
                     "data": bin_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if v else "rgba(0,0,0,0)" for v in bin_helper],
@@ -352,21 +370,24 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "anchor": "end"
                     },
                     "hidden": True,
-                    "showInLegend": False
+                    "showInLegend": False,
+                    "order": 2
                 }
             ]
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "layout": {"padding": {"top": 12, "bottom": 18, "left": 10, "right": 10}},
+            "layout": {
+                "padding": {"top": 14, "bottom": 22, "left": 12, "right": 12}
+            },
             "plugins": {
                 "title": {
                     "display": True,
-                    "text": "30 days: daily average AQI",
-                    "color": "#333",
+                    "text": "30-day daily average AQI — Calamba vs Biñan",
+                    "color": "#222",
                     "font": {"size": 14, "weight": "600"},
-                    "padding": {"top": 6, "bottom": 6}
+                    "padding": {"top": 6, "bottom": 8}
                 },
                 "legend": {
                     "position": "bottom",
@@ -390,7 +411,15 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "borderDash": [6, 4],
                             "borderWidth": 1.6,
                             "opacity": 0.95,
-                            "label": {"enabled": False}
+                            "label": {
+                                "enabled": True,
+                                "content": "AQI 100 threshold",
+                                "position": "end",
+                                "backgroundColor": "rgba(229,57,53,0.95)",
+                                "color": "#fff",
+                                "font": {"size": 10, "weight": "600"},
+                                "padding": 6
+                            }
                         }
                     }
                 }
@@ -413,15 +442,14 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 }
             },
             "elements": {
-                "line": {"borderWidth": 1.2},
+                "line": {"borderWidth": 1.25},
                 "point": {"hoverRadius": 8}
             }
         }
     }
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
-
+    return f"https://quickchart.io/chart?w=920&h=420&c={encoded}"
 
 # =========================
 # BUILD HTML EMAIL
@@ -432,51 +460,29 @@ def build_html_email():
     <head>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f5f5f5; }
-            .container { max-width: 1000px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.06); }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 18px; text-align: center; border-radius: 8px 8px 0 0; }
-            .header h1 { margin: 0; font-size: 24px; }
+            .container { max-width: 1000px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+            .header { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding: 18px; text-align: center; border-radius: 8px 8px 0 0; }
+            .header h1 { margin: 0; font-size: 22px; }
             .header p { margin: 6px 0 0 0; font-size: 13px; opacity: 0.95; }
-            .location-card { padding: 18px; border-left: 4px solid #667eea; background-color: #fbfbfb; border-radius: 4px; }
-            .location-name { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 12px; }
-            .aqi-box { display: block; padding: 12px 16px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 12px; text-align: center; }
-            .aqi-value { font-size: 32px; line-height: 1; }
-            .aqi-label { font-size: 14px; margin-top: 4px; }
-            .aqi-pm { font-size: 12px; margin-top: 4px; opacity: 0.9; }
-            .aqi-advice { margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 4px; font-size: 13px; color: #555; }
-            .weather-grid { display: table; width: 100%; margin: 12px 0; border-collapse: collapse; }
-            .weather-cell { display: table-cell; width: 33.33%; background-color: #f7f7f7; padding: 8px; text-align: center; border: 1px solid white; }
-            .weather-item-label { font-size: 12px; color: #777; }
-            .weather-item-value { font-size: 16px; font-weight: bold; color: #333; }
-            .pollutants-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-            .pollutants-table th { background-color: #667eea; color: white; padding: 8px; text-align: left; font-size: 13px; }
-            .pollutants-table td { padding: 8px; border-bottom: 1px solid #eaeaea; font-size: 13px; }
-            .pollutants-table tr:nth-child(even) { background-color: #fafafa; }
+            .grid { display: flex; gap: 12px; padding: 16px; }
+            .card { flex: 1; padding: 14px; border-radius: 6px; background: #fbfbff; border-left: 4px solid #4f46e5; }
+            .location-name { font-size: 15px; font-weight: 700; color: #222; margin-bottom: 8px; }
+            .aqi-box { padding: 10px 12px; border-radius: 8px; color: white; font-weight: 700; text-align: center; margin-bottom: 10px; }
+            .aqi-value { font-size: 28px; }
+            .aqi-label { font-size: 13px; margin-top: 4px; }
+            .small { font-size: 12px; color: #666; }
+            .trend-section { margin: 16px; padding: 16px; border-left: 4px solid #4f46e5; background-color: #fbfbff; border-radius: 6px; }
+            .trend-img { width: 100%; max-width: 920px; border-radius: 6px; border: 1px solid #eaeaea; display: block; background-color: #fff; }
             .footer { background-color: #f5f5f5; padding: 12px; text-align: center; border-radius: 0 0 8px 8px; font-size: 11px; color: #999; }
-            .divider { height: 1px; background-color: #e0e0e0; margin: 16px; }
-            .news-section { margin: 16px; padding: 16px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px; }
-            .news-title { color: #ff6f00; margin-top: 0; margin-bottom: 12px; }
-            .news-article { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #ffe0b2; }
-            .news-article:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-            .news-article a { color: #ff6f00; text-decoration: none; font-weight: bold; }
-            .news-source { font-size: 12px; color: #999; }
-            .news-desc { font-size: 13px; color: #333; margin: 6px 0 0 0; }
-            .taal-info { background-color: #e3f2fd; padding: 8px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #1565c0; }
-            .alert-card { border-left-color: #d32f2f !important; background-color: #fff5f5 !important; }
-            .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 8px; }
-            .trend-section { margin: 16px; padding: 16px; border-left: 4px solid #667eea; background-color: #fbfbfb; border-radius: 4px; }
-            .trend-title { font-size: 15px; font-weight: bold; color: #333; margin: 0 0 6px 0; }
-            .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 12px 0; }
-            .trend-img { width: 100%; max-width: 860px; border-radius: 6px; border: 1px solid #eaeaea; display: block; background-color: #fff; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <h1>🌍 Air Quality Report</h1>
-                <p>Weekly AQI & Weather Summary</p>
+                <p>30-day trend · Live readings · Threshold labels for AQI &gt; 100</p>
             </div>
-            <table style="width:100%; border-collapse: collapse; padding: 16px;">
-            <tr>
+            <div class="grid">
     """
     location_cards = []
     fetched_aqi = {}
@@ -502,57 +508,27 @@ def build_html_email():
         wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
         taal_indicator = "TOWARDS" if wind_towards_taal else "AWAY FROM"
         is_alert = aqi_level >= 4
-        alert_class = "alert-card" if is_alert else ""
-        alert_border_color = "#d32f2f" if is_alert else "#667eea"
-        alert_message = "<div class='alert-message'>⚠️ ALERT: Air quality is poor or very poor</div>" if is_alert else ""
+        alert_border_color = "#d32f2f" if is_alert else "#4f46e5"
+        alert_message = "<div style='color:#d32f2f;font-weight:700;margin-bottom:8px;'>⚠️ ALERT: Poor air quality</div>" if is_alert else ""
         card_html = f"""
-                <td style="width: 50%; padding: 12px; vertical-align: top;">
-                <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
-                    <div class="location-name">📍 {loc['name']}</div>
-                    {alert_message}
-                    <div class="aqi-box" style="background-color: {aqi_info['color']};">
-                        <div class="aqi-value">{aqi_level}</div>
-                        <div class="aqi-label">{aqi_info['label']}</div>
-                        <div class="aqi-pm">PM2.5: {aqi_numeric}/500</div>
-                    </div>
-                    <div class="aqi-advice">
-                        💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
-                    </div>
-                    <div class="taal-info">
-                        🌋 Wind direction: {wind_dir}. Air from your location is moving <strong>{taal_indicator} Taal</strong>
-                    </div>
-                    <table class="weather-grid">
-                    <tr>
-                        <td class="weather-cell">
-                            <div class="weather-item-label">Temperature</div>
-                            <div class="weather-item-value">{temp}°C</div>
-                        </td>
-                        <td class="weather-cell">
-                            <div class="weather-item-label">Wind Speed</div>
-                            <div class="weather-item-value">{wind_speed} m/s</div>
-                        </td>
-                        <td class="weather-cell">
-                            <div class="weather-item-label">Direction</div>
-                            <div class="weather-item-value">{wind_dir}</div>
-                        </td>
-                    </tr>
-                    </table>
-                    <table class="pollutants-table">
-                        <tr><th>Pollutant</th><th>Level</th></tr>
-                        <tr><td>PM2.5</td><td>{pm2_5}</td></tr>
-                        <tr><td>PM10</td><td>{pm10}</td></tr>
-                        <tr><td>NO₂</td><td>{no2}</td></tr>
-                        <tr><td>O₃</td><td>{o3}</td></tr>
-                    </table>
+            <div class="card" style="border-left-color:{alert_border_color};">
+                <div class="location-name">📍 {loc['name']}</div>
+                {alert_message}
+                <div class="aqi-box" style="background-color: {aqi_info['color']};">
+                    <div class="aqi-value">{aqi_level}</div>
+                    <div class="aqi-label">{aqi_info['label']}</div>
                 </div>
-                </td>
+                <div class="small">PM2.5 (µg/m³): {pm2_5} · AQI (est): {aqi_numeric}</div>
+                <div style="margin-top:10px;" class="small">Temp: {temp}°C · Wind: {wind_speed} m/s ({wind_dir})</div>
+                <div style="margin-top:8px;" class="small">Pollutants: PM10 {pm10} · NO₂ {no2} · O₃ {o3}</div>
+                <div style="margin-top:8px;" class="small">Air relative to Taal: {taal_indicator}</div>
+            </div>
         """
         location_cards.append(card_html)
     for card in location_cards:
         html_content += card
     html_content += """
-            </tr>
-            </table>
+            </div>
     """
     # =========================
     # 30-DAY AQI TREND CHART
@@ -574,10 +550,9 @@ def build_html_email():
         )
         chart_url = build_trend_chart_url(labels, cal_values, bin_values)
         html_content += f"""
-        <div class="divider"></div>
         <div class="trend-section">
-            <p class="trend-title">📈 30-Day AQI Trend</p>
-            <p class="trend-subtitle">Past 30 days: daily average AQI · Today: live reading · Red labels = above threshold (100)</p>
+            <p style="margin:0;font-weight:700;color:#222;">📈 30-Day AQI Trend</p>
+            <p style="margin:6px 0 12px 0;color:#666;font-size:13px;">Daily average AQI · Red labels show values above threshold (100)</p>
             <img src="{chart_url}" alt="30-day AQI trend" class="trend-img" />
         </div>
         """
@@ -589,9 +564,8 @@ def build_html_email():
     news_articles = get_taal_news()
     if news_articles:
         html_content += """
-        <div class="divider"></div>
-        <div class="news-section">
-            <h3 class="news-title">🔔 Recent Taal Volcano News</h3>
+        <div style="margin:16px;padding:12px;background:#fff7ed;border-left:4px solid #ff8a00;border-radius:6px;">
+            <p style="margin:0 0 8px 0;font-weight:700;color:#ff6f00;">🔔 Recent Taal Volcano News</p>
         """
         for article in news_articles:
             title = article.get("title", "No title")
@@ -599,17 +573,17 @@ def build_html_email():
             url = article.get("url", "#")
             source = article.get("source", {}).get("name", "Unknown")
             html_content += f"""
-            <div class="news-article">
-                <a href="{url}" target="_blank">{title}</a><br>
-                <span class="news-source">{source}</span><br>
-                <p class="news-desc">{description}</p>
+            <div style="margin-bottom:10px;">
+                <a href="{url}" style="color:#ff6f00;font-weight:700;text-decoration:none;" target="_blank">{title}</a><br>
+                <span style="font-size:12px;color:#888;">{source}</span>
+                <p style="margin:6px 0 0 0;color:#333;font-size:13px;">{description}</p>
             </div>
             """
         html_content += "</div>"
     else:
         html_content += """
-        <div style="margin: 16px; padding: 12px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
-            <p style="color: #999; margin: 0;">ℹ️ No recent Taal activity reported</p>
+        <div style="margin:16px;padding:12px;background:#f5f5f5;border-left:4px solid #ccc;border-radius:6px;">
+            <p style="margin:0;color:#777;">ℹ️ No recent Taal activity reported</p>
         </div>
         """
     html_content += """
@@ -630,7 +604,7 @@ def send_email():
     try:
         html_email = build_html_email()
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = "🌍 Weekly AQI & Weather Report (Laguna)"
+        msg["Subject"] = "🌍 Air Quality Report — Calamba & Biñan"
         msg["From"] = SENDER
         msg["To"] = ", ".join(RECEIVERS)
         msg.attach(MIMEText(html_email, "html"))
