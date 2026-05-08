@@ -282,6 +282,13 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     cal_radii = emphasize_last(base_point_radii(cal_values))
     bin_radii = emphasize_last(base_point_radii(bin_values))
 
+    # Helper datasets to show datalabels without relying on script callbacks.
+    def helper_values_for_labels(values):
+        return [v if (v is not None and v > 100) else None for v in (values or [])]
+
+    cal_helper = helper_values_for_labels(cal_values)
+    bin_helper = helper_values_for_labels(bin_values)
+
     chart_config = {
         "type": "line",
         "data": {
@@ -308,6 +315,52 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointBackgroundColor": point_colors(bin_values, MUTED_BIN),
                     "pointRadius": bin_radii,
                     "tension": 0.28
+                },
+                # Invisible helper for Calamba labels (only points >100)
+                {
+                    "label": "",
+                    "data": cal_helper,
+                    "borderWidth": 0,
+                    "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in cal_helper],
+                    "pointRadius": [6 if (v is not None and v > 100) else 0 for v in cal_helper],
+                    "showLine": False,
+                    "fill": False,
+                    "stepped": False,
+                    "spanGaps": True,
+                    "datalabels": {
+                        "display": True,
+                        "color": "#fff",
+                        "backgroundColor": ALERT_RED,
+                        "borderRadius": 4,
+                        "font": {"size": 11, "weight": "600"},
+                        "padding": 6,
+                        "align": "top",
+                        "anchor": "end"
+                    },
+                    "showInLegend": False
+                },
+                # Invisible helper for Biñan labels (only points >100)
+                {
+                    "label": "",
+                    "data": bin_helper,
+                    "borderWidth": 0,
+                    "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in bin_helper],
+                    "pointRadius": [6 if (v is not None and v > 100) else 0 for v in bin_helper],
+                    "showLine": False,
+                    "fill": False,
+                    "stepped": False,
+                    "spanGaps": True,
+                    "datalabels": {
+                        "display": True,
+                        "color": "#fff",
+                        "backgroundColor": ALERT_RED,
+                        "borderRadius": 4,
+                        "font": {"size": 11, "weight": "600"},
+                        "padding": 6,
+                        "align": "top",
+                        "anchor": "end"
+                    },
+                    "showInLegend": False
                 }
             ]
         },
@@ -331,16 +384,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "color": "#444",
                         "font": {"size": 12}
                     }
-                },
-                "datalabels": {
-                    "display": "function(context){ var v = context.dataset.data[context.dataIndex]; return (v !== null && v !== undefined && v > 100); }",
-                    "color": "#fff",
-                    "backgroundColor": ALERT_RED,
-                    "borderRadius": 4,
-                    "font": {"size": 11, "weight": "600"},
-                    "padding": 6,
-                    "align": "top",
-                    "anchor": "end"
                 },
                 "annotation": {
                     "annotations": {
