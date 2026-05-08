@@ -365,7 +365,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
             "responsive": True,
             "maintainAspectRatio": False,
             "layout": {
-                "padding": {"top": 12, "bottom": 12, "left": 8, "right": 8}
+                "padding": {"top": 14, "bottom": 14, "left": 8, "right": 8}
             },
             "plugins": {
                 "title": {
@@ -377,6 +377,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 },
                 "legend": {
                     "position": "bottom",
+                    "align": "center",
                     "labels": {
                         "usePointStyle": True,
                         "pointStyle": "circle",
@@ -395,7 +396,9 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "borderColor": ALERT_RED,
                             "borderDash": [6, 4],
                             "borderWidth": 1.4,
-                            "label": {"enabled": False}
+                            "label": {
+                                "enabled": False
+                            }
                         }
                     }
                 }
@@ -418,6 +421,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 }
             },
             "elements": {
+                "line": {"borderWidth": 1.2},
                 "point": {"hoverRadius": 8}
             }
         }
@@ -425,6 +429,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+
 
 
 # =========================
