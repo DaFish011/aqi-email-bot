@@ -255,6 +255,9 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # =========================
 # BUILD TREND CHART URL
 # =========================
+# =========================
+# BUILD TREND CHART URL
+# =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
     MUTED_CAL = "#5c6bc0"
     MUTED_BIN = "#ffb74d"
@@ -315,6 +318,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointRadius": bin_radii,
                     "tension": 0.24
                 },
+                # invisible helper for Calamba labels (only values >100)
                 {
                     "label": "",
                     "data": cal_helper,
@@ -337,6 +341,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "hidden": True,
                     "showInLegend": False
                 },
+                # invisible helper for Biñan labels (only values >100)
                 {
                     "label": "",
                     "data": bin_helper,
@@ -365,7 +370,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
             "responsive": True,
             "maintainAspectRatio": False,
             "layout": {
-                "padding": {"top": 14, "bottom": 14, "left": 8, "right": 8}
+                "padding": {"top": 12, "bottom": 18, "left": 8, "right": 8}
             },
             "plugins": {
                 "title": {
@@ -429,7 +434,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
-
 
 
 # =========================
