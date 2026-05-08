@@ -25,7 +25,9 @@ SENDER = os.getenv("EMAIL_USER")
 PASSWORD = os.getenv("EMAIL_PASS")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 RECEIVERS = [
-    "verdegan011@gmail.com",
+    "melordina1229@gmail.com",
+    "cherrie.ayson@gmail.com",
+    "kryst.villacorte@gmail.com",
     "kroderno011@gmail.com"
 ]
 if not all([API_KEY, SENDER, PASSWORD]):
