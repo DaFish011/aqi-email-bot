@@ -259,17 +259,13 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         return [ALERT_RED if (v is not None and v > 100) else base for v in (values or [])]
 
     def base_point_radii(values):
-        return [5 if (v is not None and v > 100) else 3 for v in (values or [])]
-
-    all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
-    max_y = max(max(all_valid) if all_valid else 100, 100) + 30
-    max_y = min(max_y, 300)
+        return [6 if (v is not None and v > 100) else 3 for v in (values or [])]
 
     def emphasize_last(radii):
         if not radii:
             return radii
         r = radii[:]
-        r[-1] = max(r[-1], 8)
+        r[-1] = max(r[-1], 9)
         return r
 
     cal_radii = emphasize_last(base_point_radii(cal_values))
@@ -280,6 +276,10 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     cal_helper = helper_values_for_labels(cal_values)
     bin_helper = helper_values_for_labels(bin_values)
+
+    all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
+    max_y = max(max(all_valid) if all_valid else 100, 100) + 30
+    max_y = min(max_y, 300)
 
     chart_config = {
         "type": "line",
@@ -308,12 +308,13 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointRadius": bin_radii,
                     "tension": 0.24
                 },
+                # invisible helper for Calamba labels (only >100)
                 {
-                    "label": "",
+                    "label": None,
                     "data": cal_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in cal_helper],
-                    "pointRadius": [6 if (v is not None and v > 100) else 0 for v in cal_helper],
+                    "pointRadius": [8 if (v is not None and v > 100) else 0 for v in cal_helper],
                     "showLine": False,
                     "fill": False,
                     "spanGaps": True,
@@ -330,12 +331,13 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "hidden": True,
                     "showInLegend": False
                 },
+                # invisible helper for Biñan labels (only >100)
                 {
-                    "label": "",
+                    "label": None,
                     "data": bin_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in bin_helper],
-                    "pointRadius": [6 if (v is not None and v > 100) else 0 for v in bin_helper],
+                    "pointRadius": [8 if (v is not None and v > 100) else 0 for v in bin_helper],
                     "showLine": False,
                     "fill": False,
                     "spanGaps": True,
@@ -358,7 +360,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
             "responsive": True,
             "maintainAspectRatio": False,
             "layout": {
-                "padding": {"top": 10, "bottom": 18, "left": 8, "right": 8}
+                "padding": {"top": 12, "bottom": 18, "left": 10, "right": 10}
             },
             "plugins": {
                 "title": {
