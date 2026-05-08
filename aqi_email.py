@@ -371,7 +371,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     }
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+    return f"https://quickchart.io/chart?w=860&h=380&c={encoded}
 
 
 # =========================
