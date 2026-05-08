@@ -256,11 +256,13 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # BUILD TREND CHART URL
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    MUTED_CAL = "#5c6bc0"
-    MUTED_BIN = "#ffb74d"
-    ALERT_RED = "#e53935"
-    BG_FILL_CAL = "rgba(92,107,192,0.10)"
-    BG_FILL_BIN = "rgba(255,183,77,0.08)"
+    # Colors
+    CAL_COLOR = "#00897b"   # teal
+    BIN_COLOR = "#f57c00"   # orange
+    ALERT_RED = "#d32f2f"
+
+    BG_FILL_CAL = "rgba(0,137,123,0.15)"
+    BG_FILL_BIN = "rgba(245,124,0,0.15)"
 
     def point_colors(values, base):
         return [ALERT_RED if (v is not None and v > 100) else base for v in (values or [])]
@@ -282,12 +284,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     cal_radii = emphasize_last(base_point_radii(cal_values))
     bin_radii = emphasize_last(base_point_radii(bin_values))
 
-    def helper_values_for_labels(values):
-        return [v if (v is not None and v > 100) else None for v in (values or [])]
-
-    cal_helper = helper_values_for_labels(cal_values)
-    bin_helper = helper_values_for_labels(bin_values)
-
     chart_config = {
         "type": "line",
         "data": {
@@ -296,95 +292,45 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 {
                     "label": "Calamba",
                     "data": cal_values or [],
-                    "borderColor": MUTED_CAL,
+                    "borderColor": CAL_COLOR,
                     "backgroundColor": BG_FILL_CAL,
-                    "borderWidth": 1.2,
+                    "borderWidth": 2,
                     "fill": True,
-                    "pointBackgroundColor": point_colors(cal_values, MUTED_CAL),
+                    "pointBackgroundColor": point_colors(cal_values, CAL_COLOR),
                     "pointRadius": cal_radii,
-                    "tension": 0.24
+                    "tension": 0.3
                 },
                 {
                     "label": "Biñan",
                     "data": bin_values or [],
-                    "borderColor": MUTED_BIN,
+                    "borderColor": BIN_COLOR,
                     "backgroundColor": BG_FILL_BIN,
-                    "borderWidth": 1.2,
+                    "borderWidth": 2,
                     "fill": True,
-                    "pointBackgroundColor": point_colors(bin_values, MUTED_BIN),
+                    "pointBackgroundColor": point_colors(bin_values, BIN_COLOR),
                     "pointRadius": bin_radii,
-                    "tension": 0.24
-                },
-                {
-                    "label": "",
-                    "data": cal_helper,
-                    "borderWidth": 0,
-                    "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in cal_helper],
-                    "pointRadius": [6 if (v is not None and v > 100) else 0 for v in cal_helper],
-                    "showLine": False,
-                    "fill": False,
-                    "spanGaps": True,
-                    "datalabels": {
-                        "display": True,
-                        "color": "#fff",
-                        "backgroundColor": ALERT_RED,
-                        "borderRadius": 4,
-                        "font": {"size": 11, "weight": "600"},
-                        "padding": 4,
-                        "align": "top",
-                        "anchor": "end"
-                    },
-                    "hidden": True,
-                    "showInLegend": False
-                },
-                {
-                    "label": "",
-                    "data": bin_helper,
-                    "borderWidth": 0,
-                    "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in bin_helper],
-                    "pointRadius": [6 if (v is not None and v > 100) else 0 for v in bin_helper],
-                    "showLine": False,
-                    "fill": False,
-                    "spanGaps": True,
-                    "datalabels": {
-                        "display": True,
-                        "color": "#fff",
-                        "backgroundColor": ALERT_RED,
-                        "borderRadius": 4,
-                        "font": {"size": 11, "weight": "600"},
-                        "padding": 4,
-                        "align": "top",
-                        "anchor": "end"
-                    },
-                    "hidden": True,
-                    "showInLegend": False
+                    "tension": 0.3
                 }
             ]
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "layout": {
-                "padding": {"top": 14, "bottom": 14, "left": 8, "right": 8}
-            },
             "plugins": {
                 "title": {
                     "display": True,
-                    "text": "30 days: daily average AQI",
-                    "color": "#333",
-                    "font": {"size": 14, "weight": "600"},
-                    "padding": {"top": 6, "bottom": 6}
+                    "text": "Laguna AQI Trends – Last 30 Days",
+                    "color": "#222",
+                    "font": {"size": 16, "weight": "700"},
+                    "padding": {"top": 8, "bottom": 8}
                 },
                 "legend": {
-                    "position": "bottom",
-                    "align": "center",
+                    "position": "top",
                     "labels": {
                         "usePointStyle": True,
                         "pointStyle": "circle",
-                        "boxWidth": 10,
-                        "padding": 8,
-                        "color": "#444",
-                        "font": {"size": 12}
+                        "color": "#333",
+                        "font": {"size": 13}
                     }
                 },
                 "annotation": {
@@ -394,10 +340,15 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "yMin": 100,
                             "yMax": 100,
                             "borderColor": ALERT_RED,
-                            "borderDash": [6, 4],
-                            "borderWidth": 1.4,
+                            "borderDash": [8, 6],
+                            "borderWidth": 2,
                             "label": {
-                                "enabled": False
+                                "enabled": True,
+                                "content": "Unhealthy Threshold",
+                                "position": "end",
+                                "backgroundColor": ALERT_RED,
+                                "color": "#fff",
+                                "font": {"size": 11, "weight": "600"}
                             }
                         }
                     }
@@ -405,31 +356,22 @@ def build_trend_chart_url(labels, cal_values, bin_values):
             },
             "scales": {
                 "x": {
-                    "type": "category",
-                    "grid": {"display": False},
-                    "ticks": {"color": "#666", "maxRotation": 0, "autoSkip": True}
+                    "ticks": {"color": "#555", "maxRotation": 30, "autoSkip": True},
+                    "grid": {"display": False}
                 },
                 "y": {
+                    "title": {"display": True, "text": "Air Quality Index (AQI)", "color": "#555", "font": {"size": 12}},
+                    "grid": {"color": "#f0f0f0"},
+                    "ticks": {"color": "#555"},
                     "min": 0,
-                    "max": max_y,
-                    "grid": {"color": "#f3f3f3"},
-                    "ticks": {
-                        "color": "#666",
-                        "callback": "function(value){ return value === 100 ? '100 — Threshold' : value; }"
-                    },
-                    "title": {"display": True, "text": "AQI", "color": "#666", "font": {"size": 11}}
+                    "max": max_y
                 }
-            },
-            "elements": {
-                "line": {"borderWidth": 1.2},
-                "point": {"hoverRadius": 8}
             }
         }
     }
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
-
 
 
 # =========================
