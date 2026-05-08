@@ -255,9 +255,6 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # =========================
 # BUILD TREND CHART URL
 # =========================
-# =========================
-# BUILD TREND CHART URL
-# =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
     MUTED_CAL = "#5c6bc0"
     MUTED_BIN = "#ffb74d"
@@ -318,9 +315,9 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointRadius": bin_radii,
                     "tension": 0.24
                 },
-                # invisible helper for Calamba labels (only values >100)
+                # helper dataset for Calamba labels (only values >100)
                 {
-                    "label": "",
+                    "label": None,
                     "data": cal_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in cal_helper],
@@ -334,16 +331,16 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "backgroundColor": ALERT_RED,
                         "borderRadius": 4,
                         "font": {"size": 11, "weight": "600"},
-                        "padding": 4,
+                        "padding": 6,
                         "align": "top",
                         "anchor": "end"
                     },
                     "hidden": True,
                     "showInLegend": False
                 },
-                # invisible helper for Biñan labels (only values >100)
+                # helper dataset for Biñan labels (only values >100)
                 {
-                    "label": "",
+                    "label": None,
                     "data": bin_helper,
                     "borderWidth": 0,
                     "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in bin_helper],
@@ -357,7 +354,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                         "backgroundColor": ALERT_RED,
                         "borderRadius": 4,
                         "font": {"size": 11, "weight": "600"},
-                        "padding": 4,
+                        "padding": 6,
                         "align": "top",
                         "anchor": "end"
                     },
@@ -370,7 +367,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
             "responsive": True,
             "maintainAspectRatio": False,
             "layout": {
-                "padding": {"top": 12, "bottom": 18, "left": 8, "right": 8}
+                "padding": {"top": 10, "bottom": 18, "left": 8, "right": 8}
             },
             "plugins": {
                 "title": {
@@ -400,10 +397,9 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "yMax": 100,
                             "borderColor": ALERT_RED,
                             "borderDash": [6, 4],
-                            "borderWidth": 1.4,
-                            "label": {
-                                "enabled": False
-                            }
+                            "borderWidth": 1.6,
+                            "label": {"enabled": False},
+                            "opacity": 0.95
                         }
                     }
                 }
@@ -435,7 +431,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
 
-
 # =========================
 # BUILD HTML EMAIL
 # =========================
@@ -445,43 +440,41 @@ def build_html_email():
     <head>
         <style>
             body { font-family: Arial, sans-serif; background-color: #f5f5f5; }
-            .container { max-width: 1000px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .header h1 { margin: 0; font-size: 28px; }
-            .header p { margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; }
-            .location-card { padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
-            .location-name { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; }
-            .aqi-box { display: block; padding: 15px 20px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 15px; text-align: center; }
-            .aqi-value { font-size: 36px; line-height: 1; }
-            .aqi-label { font-size: 16px; margin-top: 5px; }
-            .aqi-pm { font-size: 12px; margin-top: 5px; opacity: 0.9; }
+            .container { max-width: 1000px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.06); }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 18px; text-align: center; border-radius: 8px 8px 0 0; }
+            .header h1 { margin: 0; font-size: 24px; }
+            .header p { margin: 6px 0 0 0; font-size: 13px; opacity: 0.95; }
+            .location-card { padding: 18px; border-left: 4px solid #667eea; background-color: #fbfbfb; border-radius: 4px; }
+            .location-name { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 12px; }
+            .aqi-box { display: block; padding: 12px 16px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 12px; text-align: center; }
+            .aqi-value { font-size: 32px; line-height: 1; }
+            .aqi-label { font-size: 14px; margin-top: 4px; }
+            .aqi-pm { font-size: 12px; margin-top: 4px; opacity: 0.9; }
             .aqi-advice { margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 4px; font-size: 13px; color: #555; }
-            .weather-grid { display: table; width: 100%; margin: 15px 0; border-collapse: collapse; }
-            .weather-cell { display: table-cell; width: 33.33%; background-color: #f0f0f0; padding: 10px; text-align: center; border: 1px solid white; }
+            .weather-grid { display: table; width: 100%; margin: 12px 0; border-collapse: collapse; }
+            .weather-cell { display: table-cell; width: 33.33%; background-color: #f7f7f7; padding: 8px; text-align: center; border: 1px solid white; }
             .weather-item-label { font-size: 12px; color: #777; }
-            .weather-item-value { font-size: 18px; font-weight: bold; color: #333; }
-            .pollutants-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-            .pollutants-table th { background-color: #667eea; color: white; padding: 10px; text-align: left; font-size: 13px; }
-            .pollutants-table td { padding: 10px; border-bottom: 1px solid #e0e0e0; font-size: 13px; }
-            .pollutants-table tr:nth-child(even) { background-color: #f9f9f9; }
-            .footer { background-color: #f5f5f5; padding: 15px; text-align: center; border-radius: 0 0 8px 8px; font-size: 11px; color: #999; }
-            .divider { height: 1px; background-color: #e0e0e0; margin: 20px; }
-            .news-section { margin: 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px; }
-            .news-title { color: #ff6f00; margin-top: 0; margin-bottom: 15px; }
-            .news-article { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ffe0b2; }
+            .weather-item-value { font-size: 16px; font-weight: bold; color: #333; }
+            .pollutants-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+            .pollutants-table th { background-color: #667eea; color: white; padding: 8px; text-align: left; font-size: 13px; }
+            .pollutants-table td { padding: 8px; border-bottom: 1px solid #eaeaea; font-size: 13px; }
+            .pollutants-table tr:nth-child(even) { background-color: #fafafa; }
+            .footer { background-color: #f5f5f5; padding: 12px; text-align: center; border-radius: 0 0 8px 8px; font-size: 11px; color: #999; }
+            .divider { height: 1px; background-color: #e0e0e0; margin: 16px; }
+            .news-section { margin: 16px; padding: 16px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px; }
+            .news-title { color: #ff6f00; margin-top: 0; margin-bottom: 12px; }
+            .news-article { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #ffe0b2; }
             .news-article:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
             .news-article a { color: #ff6f00; text-decoration: none; font-weight: bold; }
-            .news-article a:hover { text-decoration: underline; }
             .news-source { font-size: 12px; color: #999; }
-            .news-desc { font-size: 13px; color: #333; margin: 5px 0 0 0; }
-            .taal-info { background-color: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1565c0; }
-            .alert-card { border-left-color: #d32f2f !important; background-color: #ffebee !important; }
-            .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 10px; }
-            .locations-row { width: 100%; border-collapse: collapse; }
-            .trend-section { margin: 20px; padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
-            .trend-title { font-size: 16px; font-weight: bold; color: #333; margin: 0 0 4px 0; }
-            .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 15px 0; }
-            .trend-img { width: 100%; max-width: 860px; border-radius: 6px; border: 1px solid #e0e0e0; display: block; background-color: #fafafa; }
+            .news-desc { font-size: 13px; color: #333; margin: 6px 0 0 0; }
+            .taal-info { background-color: #e3f2fd; padding: 8px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #1565c0; }
+            .alert-card { border-left-color: #d32f2f !important; background-color: #fff5f5 !important; }
+            .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 8px; }
+            .trend-section { margin: 16px; padding: 16px; border-left: 4px solid #667eea; background-color: #fbfbfb; border-radius: 4px; }
+            .trend-title { font-size: 15px; font-weight: bold; color: #333; margin: 0 0 6px 0; }
+            .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 12px 0; }
+            .trend-img { width: 100%; max-width: 860px; border-radius: 6px; border: 1px solid #eaeaea; display: block; background-color: #fff; }
         </style>
     </head>
     <body>
@@ -490,7 +483,7 @@ def build_html_email():
                 <h1>🌍 Air Quality Report</h1>
                 <p>Weekly AQI & Weather Summary</p>
             </div>
-            <table class="locations-row" cellpadding="0" cellspacing="20">
+            <table style="width:100%; border-collapse: collapse; padding: 16px;">
             <tr>
     """
     location_cards = []
@@ -498,7 +491,6 @@ def build_html_email():
     for loc in locations:
         aqi_data = get_aqi_data(loc["lat"], loc["lon"])
         weather_data = get_weather_data(loc["lat"], loc["lon"])
-        # Store for reuse in the trend chart
         fetched_aqi[loc["name"]] = aqi_data
         if not aqi_data:
             logger.warning(f"No AQI data for {loc['name']}")
@@ -522,7 +514,7 @@ def build_html_email():
         alert_border_color = "#d32f2f" if is_alert else "#667eea"
         alert_message = "<div class='alert-message'>⚠️ ALERT: Air quality is poor or very poor</div>" if is_alert else ""
         card_html = f"""
-                <td style="width: 50%; padding: 20px; vertical-align: top;">
+                <td style="width: 50%; padding: 12px; vertical-align: top;">
                 <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
                     <div class="location-name">📍 {loc['name']}</div>
                     {alert_message}
@@ -593,7 +585,7 @@ def build_html_email():
         <div class="divider"></div>
         <div class="trend-section">
             <p class="trend-title">📈 30-Day AQI Trend</p>
-            <p class="trend-subtitle">Past 30 days: daily average AQI · Today: live reading · Red points = above threshold (100)</p>
+            <p class="trend-subtitle">Past 30 days: daily average AQI · Today: live reading · Red labels = above threshold (100)</p>
             <img src="{chart_url}" alt="30-day AQI trend" class="trend-img" />
         </div>
         """
@@ -614,7 +606,6 @@ def build_html_email():
             description = article.get("description", "No description")
             url = article.get("url", "#")
             source = article.get("source", {}).get("name", "Unknown")
-            # NOTE: consider escaping title/description if content may contain HTML
             html_content += f"""
             <div class="news-article">
                 <a href="{url}" target="_blank">{title}</a><br>
@@ -625,7 +616,7 @@ def build_html_email():
         html_content += "</div>"
     else:
         html_content += """
-        <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
+        <div style="margin: 16px; padding: 12px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
             <p style="color: #999; margin: 0;">ℹ️ No recent Taal activity reported</p>
         </div>
         """
