@@ -369,7 +369,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "padding": {"top": 6, "bottom": 6}
                 },
                 "legend": {
-                    "position": "bottom",
+                    "position": "bottom",   # legend at bottom
                     "align": "center",
                     "labels": {
                         "usePointStyle": True,
@@ -420,6 +420,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+
 
 
 # =========================
