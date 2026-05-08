@@ -253,12 +253,8 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
     return all_labels, merged_cal, merged_bin
 
 # =========================
-# BUILD TREND CHART URL (soft design, muted alarm threshold)
+# BUILD TREND CHART URL
 # =========================
-import json
-import urllib.parse
-
-# --- Chart builder ---
 def build_trend_chart_url(labels, cal_values, bin_values):
     MUTED_CAL = "#5c6bc0"
     MUTED_BIN = "#ffb74d"
@@ -385,8 +381,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
-
-
 
 # =========================
 # BUILD HTML EMAIL
