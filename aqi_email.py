@@ -265,7 +265,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         if not radii:
             return radii
         r = radii[:]
-        r[-1] = max(r[-1], 9)
+        r[-1] = max(r[-1], 9)  # emphasize last point
         return r
 
     cal_radii = emphasize_last(base_point_radii(cal_values))
@@ -308,13 +308,13 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "pointRadius": bin_radii,
                     "tension": 0.24
                 },
-                # invisible helper for Calamba labels (only >100)
+                # helper dataset for Calamba labels (>100 only)
                 {
                     "label": None,
                     "data": cal_helper,
                     "borderWidth": 0,
-                    "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in cal_helper],
-                    "pointRadius": [8 if (v is not None and v > 100) else 0 for v in cal_helper],
+                    "pointBackgroundColor": [ALERT_RED if v else "rgba(0,0,0,0)" for v in cal_helper],
+                    "pointRadius": [8 if v else 0 for v in cal_helper],
                     "showLine": False,
                     "fill": False,
                     "spanGaps": True,
@@ -331,13 +331,13 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "hidden": True,
                     "showInLegend": False
                 },
-                # invisible helper for Biñan labels (only >100)
+                # helper dataset for Biñan labels (>100 only)
                 {
                     "label": None,
                     "data": bin_helper,
                     "borderWidth": 0,
-                    "pointBackgroundColor": [ALERT_RED if (v is not None and v > 100) else "rgba(0,0,0,0)" for v in bin_helper],
-                    "pointRadius": [8 if (v is not None and v > 100) else 0 for v in bin_helper],
+                    "pointBackgroundColor": [ALERT_RED if v else "rgba(0,0,0,0)" for v in bin_helper],
+                    "pointRadius": [8 if v else 0 for v in bin_helper],
                     "showLine": False,
                     "fill": False,
                     "spanGaps": True,
@@ -359,9 +359,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "layout": {
-                "padding": {"top": 12, "bottom": 18, "left": 10, "right": 10}
-            },
+            "layout": {"padding": {"top": 12, "bottom": 18, "left": 10, "right": 10}},
             "plugins": {
                 "title": {
                     "display": True,
@@ -391,7 +389,6 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "borderColor": ALERT_RED,
                             "borderDash": [6, 4],
                             "borderWidth": 1.6,
-                            "label": {"enabled": False},
                             "opacity": 0.95
                         }
                     }
@@ -423,6 +420,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+
 
 # =========================
 # BUILD HTML EMAIL
