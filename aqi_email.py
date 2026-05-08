@@ -256,35 +256,35 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # BUILD TREND CHART URL (soft design, muted alarm threshold)
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    # Muted palette and helpers
-    MUTED_CAL = "#5c6bc0"   # softer indigo
-    MUTED_BIN = "#ffb74d"   # softer amber
+    """
+    Build a QuickChart URL for the 30-day AQI trend.
+
+    - Keeps x-axis labels exactly as provided (no date format changes).
+    - Softer, muted colors for lines/fills and labels.
+    - Modern legend with circular swatches.
+    - Dashed threshold line at 100; the y-axis tick for 100 is emphasized via a tick callback.
+    - Data labels shown ONLY for points with AQI > 100 (applies to all points, including today).
+    """
+
+    # Muted palette
+    MUTED_CAL = "#5c6bc0"    # soft indigo
+    MUTED_BIN = "#ffb74d"    # soft amber
     ALERT_RED = "#e53935"
     BG_FILL_CAL = "rgba(92,107,192,0.10)"
     BG_FILL_BIN = "rgba(255,183,77,0.08)"
 
     def point_colors(values, base):
-        return [ALERT_RED if (v and v > 100) else base for v in (values or [])]
+        return [ALERT_RED if (v is not None and v > 100) else base for v in (values or [])]
 
     def base_point_radii(values):
-        return [5 if (v and v > 100) else 3 for v in (values or [])]
+        return [5 if (v is not None and v > 100) else 3 for v in (values or [])]
 
-    # Compute sensible max_y
+    # sensible max_y for AQI readability
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
     max_y = max(max(all_valid) if all_valid else 100, 100) + 30
     max_y = min(max_y, 300)
 
-    # Convert short labels ("May 01") to ISO dates for time axis if possible
-    iso_labels = []
-    year = datetime.utcnow().year
-    for lbl in labels or []:
-        try:
-            dt = datetime.strptime(f"{lbl} {year}", "%b %d %Y")
-            iso_labels.append(dt.isoformat())
-        except Exception:
-            iso_labels.append(lbl)
-
-    # Emphasize last point radius
+    # Emphasize last point visually (radius only) but do NOT force a label if <=100
     def emphasize_last(radii):
         if not radii:
             return radii
@@ -295,15 +295,15 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     cal_radii = emphasize_last(base_point_radii(cal_values))
     bin_radii = emphasize_last(base_point_radii(bin_values))
 
-    # Chart config
     chart_config = {
         "type": "line",
         "data": {
-            "labels": iso_labels,
+            # Keep labels exactly as provided by the caller
+            "labels": labels or [],
             "datasets": [
                 {
                     "label": "Calamba",
-                    "data": cal_values,
+                    "data": cal_values or [],
                     "borderColor": MUTED_CAL,
                     "backgroundColor": BG_FILL_CAL,
                     "borderWidth": 1.6,
@@ -314,7 +314,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 },
                 {
                     "label": "Biñan",
-                    "data": bin_values,
+                    "data": bin_values or [],
                     "borderColor": MUTED_BIN,
                     "backgroundColor": BG_FILL_BIN,
                     "borderWidth": 1.6,
@@ -348,7 +348,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                 },
                 # datalabels: show only for values > 100
                 "datalabels": {
-                    "display": "function(context){ return context.dataset.data[context.dataIndex] > 100; }",
+                    "display": "function(context){ var v = context.dataset.data[context.dataIndex]; return (v !== null && v !== undefined && v > 100); }",
                     "color": "#fff",
                     "backgroundColor": ALERT_RED,
                     "borderRadius": 4,
@@ -357,7 +357,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "align": "top",
                     "anchor": "end"
                 },
-                # annotation: dashed threshold line at 100
+                # annotation: dashed threshold line at 100 (no filled band)
                 "annotation": {
                     "annotations": {
                         "threshold_line": {
@@ -367,17 +367,15 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "borderColor": ALERT_RED,
                             "borderDash": [6, 4],
                             "borderWidth": 1.2,
-                            "label": {
-                                "enabled": False
-                            }
+                            "label": {"enabled": False}
                         }
                     }
                 }
             },
             "scales": {
+                # Keep x-axis as categorical so labels remain exactly as provided
                 "x": {
-                    "type": "time",
-                    "time": {"unit": "day", "tooltipFormat": "MMM dd"},
+                    "type": "category",
                     "grid": {"display": False},
                     "ticks": {"color": "#666", "maxRotation": 0, "autoSkip": True}
                 },
@@ -387,7 +385,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "grid": {"color": "#f3f3f3"},
                     "ticks": {
                         "color": "#666",
-                        # Highlight the 100 tick label by returning a custom string for 100
+                        # Highlight the 100 tick label text only
                         "callback": "function(value){ return value === 100 ? '100 — Threshold' : value; }"
                     },
                     "title": {"display": True, "text": "AQI", "color": "#666", "font": {"size": 11}}
@@ -401,6 +399,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+
 
 
 # =========================
