@@ -265,26 +265,22 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     def point_colors(values, base):
         return [ALERT_RED if (v is not None and v > 100) else base for v in (values or [])]
 
-    def base_point_radii(values):
-        return [6 if (v is not None and v > 100) else 3 for v in (values or [])]
-
-    # 2. Inline labels on points that exceed threshold
-    def point_labels(values):
-        return [str(v) if (v is not None and v > 100) else "" for v in (values or [])]
+    def point_radii(values, is_last=False):
+        radii = [7 if (v is not None and v > 100) else 3 for v in (values or [])]
+        if radii and is_last:
+            radii[-1] = max(radii[-1], 8)
+        return radii
 
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
     max_y = max(max(all_valid) if all_valid else 100, 100) + 40
     max_y = min(max_y, 320)
 
-    def emphasize_last(radii):
-        if not radii:
-            return radii
-        r = radii[:]
-        r[-1] = max(r[-1], 8)
-        return r
+    # Pre-compute per-point datalabel colors and display flags
+    def dl_colors(values):
+        return [ALERT_RED if (v is not None and v > 100) else "transparent" for v in (values or [])]
 
-    cal_radii = emphasize_last(base_point_radii(cal_values))
-    bin_radii = emphasize_last(base_point_radii(bin_values))
+    def dl_display(values):
+        return [True if (v is not None and v > 100) else False for v in (values or [])]
 
     chart_config = {
         "type": "line",
@@ -300,20 +296,16 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "fill": True,
                     "pointBackgroundColor": point_colors(cal_values, CAL_COLOR),
                     "pointBorderColor": point_colors(cal_values, CAL_COLOR),
-                    "pointRadius": cal_radii,
+                    "pointRadius": point_radii(cal_values, is_last=True),
+                    "pointHoverRadius": 6,
                     "tension": 0.3,
-                    # 2. Show value label above points past threshold
                     "datalabels": {
-                        "display": True,
-                        "labels": {
-                            "value": {
-                                "align": "top",
-                                "anchor": "end",
-                                "color": ALERT_RED,
-                                "font": {"size": 10, "weight": "bold"},
-                                "formatter": "function(v) { return v > 100 ? v : ''; }"
-                            }
-                        }
+                        "color": dl_colors(cal_values),
+                        "display": dl_display(cal_values),
+                        "anchor": "end",
+                        "align": "top",
+                        "offset": 2,
+                        "font": {"size": 10, "weight": "bold"}
                     }
                 },
                 {
@@ -325,19 +317,16 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "fill": True,
                     "pointBackgroundColor": point_colors(bin_values, BIN_COLOR),
                     "pointBorderColor": point_colors(bin_values, BIN_COLOR),
-                    "pointRadius": bin_radii,
+                    "pointRadius": point_radii(bin_values, is_last=True),
+                    "pointHoverRadius": 6,
                     "tension": 0.3,
                     "datalabels": {
-                        "display": True,
-                        "labels": {
-                            "value": {
-                                "align": "top",
-                                "anchor": "end",
-                                "color": ALERT_RED,
-                                "font": {"size": 10, "weight": "bold"},
-                                "formatter": "function(v) { return v > 100 ? v : ''; }"
-                            }
-                        }
+                        "color": dl_colors(bin_values),
+                        "display": dl_display(bin_values),
+                        "anchor": "end",
+                        "align": "top",
+                        "offset": 2,
+                        "font": {"size": 10, "weight": "bold"}
                     }
                 }
             ]
@@ -353,22 +342,21 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "font": {"size": 16, "weight": "700"},
                     "padding": {"top": 8, "bottom": 4}
                 },
-                # 3. Legend moved to bottom
+                # 3. Legend at bottom with circle point style
                 "legend": {
                     "position": "bottom",
                     "align": "center",
-                    # 4. Redesigned legend: circle markers, cleaner font
                     "labels": {
                         "usePointStyle": True,
                         "pointStyle": "circle",
-                        "boxWidth": 10,
-                        "boxHeight": 10,
-                        "padding": 20,
+                        "boxWidth": 8,
+                        "boxHeight": 8,
+                        "padding": 24,
                         "color": "#333",
                         "font": {"size": 13, "weight": "600"}
                     }
                 },
-                # 1. Red dashed threshold line at AQI 100
+                # 1. Red dashed threshold line at 100
                 "annotation": {
                     "annotations": {
                         "threshold_line": {
@@ -380,8 +368,9 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "borderWidth": 2,
                             "label": {
                                 "enabled": True,
-                                "content": "⚠ Unhealthy (100)",
+                                "content": "⚠ Unhealthy (AQI 100)",
                                 "position": "start",
+                                "xAdjust": 10,
                                 "backgroundColor": ALERT_RED,
                                 "color": "#fff",
                                 "font": {"size": 11, "weight": "700"},
@@ -414,7 +403,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     }
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?w=860&h=420&c={encoded}"
+    return f"https://quickchart.io/chart?w=860&h=430&c={encoded}"
 
 # =========================
 # BUILD HTML EMAIL
