@@ -256,10 +256,9 @@ def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
 # BUILD TREND CHART URL
 # =========================
 def build_trend_chart_url(labels, cal_values, bin_values):
-    CAL_COLOR = "#00897b"   # teal
-    BIN_COLOR = "#f57c00"   # orange
+    CAL_COLOR = "#00897b"
+    BIN_COLOR = "#f57c00"
     ALERT_RED = "#d32f2f"
-
     BG_FILL_CAL = "rgba(0,137,123,0.15)"
     BG_FILL_BIN = "rgba(245,124,0,0.15)"
 
@@ -267,11 +266,15 @@ def build_trend_chart_url(labels, cal_values, bin_values):
         return [ALERT_RED if (v is not None and v > 100) else base for v in (values or [])]
 
     def base_point_radii(values):
-        return [5 if (v is not None and v > 100) else 3 for v in (values or [])]
+        return [6 if (v is not None and v > 100) else 3 for v in (values or [])]
+
+    # 2. Inline labels on points that exceed threshold
+    def point_labels(values):
+        return [str(v) if (v is not None and v > 100) else "" for v in (values or [])]
 
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
-    max_y = max(max(all_valid) if all_valid else 100, 100) + 30
-    max_y = min(max_y, 300)
+    max_y = max(max(all_valid) if all_valid else 100, 100) + 40
+    max_y = min(max_y, 320)
 
     def emphasize_last(radii):
         if not radii:
@@ -296,8 +299,22 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "borderWidth": 2,
                     "fill": True,
                     "pointBackgroundColor": point_colors(cal_values, CAL_COLOR),
+                    "pointBorderColor": point_colors(cal_values, CAL_COLOR),
                     "pointRadius": cal_radii,
-                    "tension": 0.3
+                    "tension": 0.3,
+                    # 2. Show value label above points past threshold
+                    "datalabels": {
+                        "display": True,
+                        "labels": {
+                            "value": {
+                                "align": "top",
+                                "anchor": "end",
+                                "color": ALERT_RED,
+                                "font": {"size": 10, "weight": "bold"},
+                                "formatter": "function(v) { return v > 100 ? v : ''; }"
+                            }
+                        }
+                    }
                 },
                 {
                     "label": "Biñan",
@@ -307,8 +324,21 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "borderWidth": 2,
                     "fill": True,
                     "pointBackgroundColor": point_colors(bin_values, BIN_COLOR),
+                    "pointBorderColor": point_colors(bin_values, BIN_COLOR),
                     "pointRadius": bin_radii,
-                    "tension": 0.3
+                    "tension": 0.3,
+                    "datalabels": {
+                        "display": True,
+                        "labels": {
+                            "value": {
+                                "align": "top",
+                                "anchor": "end",
+                                "color": ALERT_RED,
+                                "font": {"size": 10, "weight": "bold"},
+                                "formatter": "function(v) { return v > 100 ? v : ''; }"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -321,17 +351,24 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "text": "Laguna AQI Trends – Last 30 Days",
                     "color": "#222",
                     "font": {"size": 16, "weight": "700"},
-                    "padding": {"top": 8, "bottom": 8}
+                    "padding": {"top": 8, "bottom": 4}
                 },
+                # 3. Legend moved to bottom
                 "legend": {
-                    "position": "top",
+                    "position": "bottom",
+                    "align": "center",
+                    # 4. Redesigned legend: circle markers, cleaner font
                     "labels": {
                         "usePointStyle": True,
                         "pointStyle": "circle",
+                        "boxWidth": 10,
+                        "boxHeight": 10,
+                        "padding": 20,
                         "color": "#333",
-                        "font": {"size": 13}
+                        "font": {"size": 13, "weight": "600"}
                     }
                 },
+                # 1. Red dashed threshold line at AQI 100
                 "annotation": {
                     "annotations": {
                         "threshold_line": {
@@ -339,15 +376,17 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                             "yMin": 100,
                             "yMax": 100,
                             "borderColor": ALERT_RED,
-                            "borderDash": [8, 6],
+                            "borderDash": [8, 5],
                             "borderWidth": 2,
                             "label": {
                                 "enabled": True,
-                                "content": "Unhealthy Threshold",
-                                "position": "end",
+                                "content": "⚠ Unhealthy (100)",
+                                "position": "start",
                                 "backgroundColor": ALERT_RED,
                                 "color": "#fff",
-                                "font": {"size": 11, "weight": "600"}
+                                "font": {"size": 11, "weight": "700"},
+                                "padding": {"x": 8, "y": 4},
+                                "cornerRadius": 4
                             }
                         }
                     }
@@ -359,7 +398,12 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "grid": {"display": False}
                 },
                 "y": {
-                    "title": {"display": True, "text": "Air Quality Index (AQI)", "color": "#555", "font": {"size": 12}},
+                    "title": {
+                        "display": True,
+                        "text": "Air Quality Index (AQI)",
+                        "color": "#555",
+                        "font": {"size": 12}
+                    },
                     "grid": {"color": "#f0f0f0"},
                     "ticks": {"color": "#555"},
                     "min": 0,
@@ -370,7 +414,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
     }
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?w=860&h=380&c={encoded}"
+    return f"https://quickchart.io/chart?w=860&h=420&c={encoded}"
 
 # =========================
 # BUILD HTML EMAIL
