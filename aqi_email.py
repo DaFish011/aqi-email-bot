@@ -348,21 +348,21 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                     "align": "center",
                     "labels": {
                         "usePointStyle": True,
-                        "pointStyle": "circle",
-                        "boxWidth": 8,
-                        "boxHeight": 8,
+                        "pointStyleWidth": 12,
                         "padding": 24,
                         "color": "#333",
                         "font": {"size": 13, "weight": "600"}
                     }
                 },
                 # 1. Red dashed threshold line at 100
+                "autocolors": False,
                 "annotation": {
-                    "annotations": {
-                        "threshold_line": {
+                    "annotations": [
+                        {
                             "type": "line",
-                            "yMin": 100,
-                            "yMax": 100,
+                            "mode": "horizontal",
+                            "scaleID": "y",
+                            "value": 100,
                             "borderColor": ALERT_RED,
                             "borderDash": [8, 5],
                             "borderWidth": 2,
@@ -378,7 +378,7 @@ def build_trend_chart_url(labels, cal_values, bin_values):
                                 "cornerRadius": 4
                             }
                         }
-                    }
+                    ]
                 }
             },
             "scales": {
