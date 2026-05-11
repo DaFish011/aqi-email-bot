@@ -24,15 +24,12 @@ API_KEY = os.getenv("API_KEY")
 SENDER = os.getenv("EMAIL_USER")
 PASSWORD = os.getenv("EMAIL_PASS")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-RECEIVERS = [
-    "melordina1229@gmail.com",
-    "cherrie.ayson@gmail.com",
-    "kryst.villacorte@gmail.com",
-    "kroderno011@gmail.com"
-]
-if not all([API_KEY, SENDER, PASSWORD]):
-    logger.error("Missing required environment variables: API_KEY, EMAIL_USER, or EMAIL_PASS")
+RECEIVERS_STR = os.getenv("RECEIVERS")
+if not all([API_KEY, SENDER, PASSWORD, RECEIVERS_STR]):
+    logger.error("Missing required environment variables: API_KEY, EMAIL_USER, EMAIL_PASS, or RECEIVERS")
     exit(1)
+# Parse comma-separated email addresses from RECEIVERS environment variable
+RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 
 # =========================
 # LOCATIONS
