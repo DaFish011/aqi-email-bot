@@ -160,35 +160,45 @@ def is_wind_towards_taal(wind_deg, bearing_to_taal):
 # =========================
 # FETCH TAAL NEWS
 # =========================
-def get_taal_news():
+def get_aqi_related_news():
     if not NEWS_API_KEY:
         logger.warning("NEWS_API_KEY not set. Skipping news fetch.")
         return []
     try:
         url = "https://newsapi.org/v2/everything"
         params = {
-            "q": "Taal Volcano eruption OR Taal activity OR Taal alert",
+            "q": "(Taal Volcano OR ashfall OR forest fire OR wildfire OR dust storm OR haze OR air pollution alert OR Laguna) AND (Philippines OR Calabarzon)",
             "sortBy": "publishedAt",
             "language": "en",
             "apiKey": NEWS_API_KEY,
-            "pageSize": 10
+            "pageSize": 15
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         articles = data.get("articles", [])
         filtered = []
-        exclude_keywords = ["pypi", "mcp", "data-mcp", "government data", "philippine", "software"]
+        # Exclude irrelevant content
+        exclude_keywords = ["recipe", "tourism", "travel guide", "history", "software", "programming", "api", "cryptocurrency", "stock"]
+        # Keywords that indicate AQI-relevant content
+        aqi_keywords = ["taal", "ashfall", "fire", "wildfire", "dust", "haze", "air quality", "pollution", "smoke", "emissions", "laguna"]
+        
         for article in articles:
             title = article.get("title", "").lower()
             description = article.get("description", "").lower() if article.get("description") else ""
-            if any(keyword in title or keyword in description for keyword in exclude_keywords):
+            combined_text = title + " " + description
+            
+            # Skip if contains excluded keywords
+            if any(keyword in combined_text for keyword in exclude_keywords):
                 continue
-            if "taal" in title or "taal" in description:
+            
+            # Keep if contains relevant AQI keywords
+            if any(keyword in combined_text for keyword in aqi_keywords):
                 filtered.append(article)
+        
         return filtered[:5]
     except RequestException as e:
-        logger.error(f"Failed to fetch Taal news: {e}")
+        logger.error(f"Failed to fetch AQI-related news: {e}")
         return []
 
 # =========================
@@ -568,14 +578,14 @@ def build_html_email():
     else:
         logger.warning("No AQI history data for trend chart.")
     # =========================
-    # TAAL NEWS SECTION
+    # AQI-RELATED NEWS SECTION
     # =========================
-    news_articles = get_taal_news()
+    news_articles = get_aqi_related_news()
     if news_articles:
         html_content += """
         <div class="divider"></div>
         <div class="news-section">
-            <h3 class="news-title">🔔 Recent Taal Volcano News</h3>
+            <h3 class="news-title">🔔 Recent Air Quality Events</h3>
         """
         for article in news_articles:
             title = article.get("title", "No title")
@@ -594,7 +604,7 @@ def build_html_email():
     else:
         html_content += """
         <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
-            <p style="color: #999; margin: 0;">ℹ️ No recent Taal activity reported</p>
+            <p style="color: #999; margin: 0;">ℹ️ No recent air quality events reported</p>
         </div>
         """
     html_content += """
