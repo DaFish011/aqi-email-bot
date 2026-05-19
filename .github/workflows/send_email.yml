@@ -1,7 +1,5 @@
 name: Weekly AQI Email
 on:
-  schedule:
-    - cron: "0 0 * * 6"
   workflow_dispatch:
 jobs:
   run-script:
