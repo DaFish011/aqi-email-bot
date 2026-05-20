@@ -36,8 +36,8 @@ RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba, Laguna", "lat": 14.2117, "lon": 121.1653},
-    {"name": "Biñan, Laguna", "lat": 14.3386, "lon": 121.0807},
+    {"name": "Calamba, Laguna", "lat": 14.2118711, "lon": 121.0887077},
+    {"name": "Biñan, Laguna", "lat": 14.2372, "lon": 121.0963},
 ]
 TAAL_LAT = 14.3568
 TAAL_LON = 121.0064
@@ -166,11 +166,12 @@ NEWS_EXCLUDE_KEYWORDS = [
     "football", "basketball", "celebrity", "k-pop", "recipe", "horoscope",
 ]
 
-# Taal/volcano, regional AQI, and smoke/haze — merged and ranked
+# Focus on Laguna region (Calamba, Biñan) and immediate vicinity
 NEWS_SEARCH_QUERIES = [
-    '(Taal OR "Taal Volcano") AND (eruption OR alert OR ash OR activity OR PHIVOLCS OR vog)',
-    '(Philippines OR Laguna OR Luzon OR Calamba) AND ("air quality" OR pollution OR haze OR smog OR "air pollution")',
-    '(Philippines OR Luzon OR Batangas) AND (wildfire OR "forest fire" OR smoke OR ashfall OR "open burning")',
+    '(Calamba OR Biñan OR Binan) AND ("air quality" OR pollution OR haze OR smog OR "air pollution")',
+    '(Laguna province) AND ("air quality" OR pollution OR haze OR smog OR ashfall)',
+    '(Taal OR "Taal Volcano") AND (eruption OR alert OR ash OR activity OR PHIVOLCS)',
+    '(Laguna OR Calamba OR Biñan) AND (wildfire OR "forest fire" OR smoke OR "open burning")',
 ]
 
 
@@ -183,6 +184,26 @@ def _article_text(article):
 def _should_exclude_article(article):
     text = _article_text(article)
     return any(kw in text for kw in NEWS_EXCLUDE_KEYWORDS)
+
+
+def _is_within_week(article_date_str):
+    """
+    Check if article was published within the past week (Sunday to Saturday).
+    Since email is sent Saturday at 8 AM, we look back 7 days.
+    """
+    try:
+        # Parse ISO format date from NewsAPI (e.g., "2024-05-18T10:30:00Z")
+        article_date = datetime.fromisoformat(article_date_str.replace("Z", "+00:00"))
+        # Convert to PH timezone
+        article_date_ph = article_date + PH_OFFSET
+        # Current time in PH timezone (Saturday 8 AM)
+        now_ph = datetime.utcnow() + PH_OFFSET
+        # One week ago
+        one_week_ago = now_ph - timedelta(days=7)
+        return article_date_ph >= one_week_ago
+    except (ValueError, TypeError):
+        logger.warning(f"Could not parse article date: {article_date_str}")
+        return False
 
 
 def _score_and_tag_article(article):
@@ -214,18 +235,18 @@ def _score_and_tag_article(article):
 
     if any(
         t in text
-        for t in ("laguna", "calamba", "biñan", "binan", "luzon", "philippines", "batangas", "manila")
+        for t in ("laguna", "calamba", "biñan", "binan")
     ):
         score += 2
-        tags.append("📍 PH / Laguna region")
+        tags.append("📍 Laguna / Calamba / Biñan")
 
     return score, tags
 
 
 def get_air_quality_news(max_articles=6):
     """
-    Headlines that may explain AQI changes: Taal eruptions, regional pollution,
-    haze, fires, and related coverage (not Taal-only).
+    Headlines specific to Calamba, Biñan, and Laguna region that may explain AQI changes.
+    Only includes articles from the past week (Sunday to Saturday).
     """
     if not NEWS_API_KEY:
         logger.warning("NEWS_API_KEY not set. Skipping news fetch.")
@@ -242,7 +263,7 @@ def get_air_quality_news(max_articles=6):
                 "sortBy": "publishedAt",
                 "language": "en",
                 "apiKey": NEWS_API_KEY,
-                "pageSize": 8,
+                "pageSize": 10,
             }
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
@@ -256,6 +277,9 @@ def get_air_quality_news(max_articles=6):
             if not link or link in seen_urls:
                 continue
             if _should_exclude_article(article):
+                continue
+            # Check if article is within the past week
+            if not _is_within_week(article.get("publishedAt", "")):
                 continue
             relevance, tags = _score_and_tag_article(article)
             if relevance < 2:
@@ -577,7 +601,16 @@ def build_html_email():
         o3 = aqi_data.get("o3", "-")
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
         wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
-        taal_indicator = "TOWARDS" if wind_towards_taal else "AWAY FROM"
+        
+        # User-friendly wind direction messaging
+        # Since Calamba/Binan are SW of Taal, the logic is inverted:
+        # Wind TOWARDS Taal = wind blowing away from your location (safe)
+        # Wind AWAY FROM Taal = wind blowing from Taal towards you (volcanic air coming in)
+        if wind_towards_taal:
+            wind_message = f"🌋 Wind is blowing <strong>away from Taal</strong> (low volcanic impact expected)"
+        else:
+            wind_message = f"🌋 Wind is blowing <strong>towards you from Taal</strong> (could carry volcanic emissions)"
+        
         is_alert = aqi_level >= 4
         alert_class = "alert-card" if is_alert else ""
         alert_border_color = "#d32f2f" if is_alert else "#667eea"
@@ -596,7 +629,7 @@ def build_html_email():
                         💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
                     </div>
                     <div class="taal-info">
-                        🌋 Wind direction: {wind_dir}. Air from your location is moving <strong>{taal_indicator} Taal</strong>
+                        {wind_message}
                     </div>
                     <table class="weather-grid">
                     <tr>
@@ -669,8 +702,8 @@ def build_html_email():
         html_content += """
         <div class="divider"></div>
         <div class="news-section">
-            <h3 class="news-title">📰 Air Quality &amp; Environment Headlines</h3>
-            <p class="news-subtitle">Coverage that may explain higher AQI — Taal volcano activity, regional pollution, haze, and smoke.</p>
+            <h3 class="news-title">📰 This Week's Air Quality & Environment Headlines</h3>
+            <p class="news-subtitle">News from the Laguna region and Taal area that may affect air quality — volcano activity, regional pollution, and smoke events.</p>
         """
         if elevated_aqi:
             html_content += """
@@ -695,9 +728,9 @@ def build_html_email():
         html_content += "</div>"
     else:
         empty_msg = (
-            "ℹ️ No matching headlines this week. AQI drivers can include weather, traffic, fires, or Taal activity not covered in English news."
+            "ℹ️ No matching headlines this week. AQI drivers can include weather patterns, traffic, fires, or Taal activity."
             if elevated_aqi
-            else "ℹ️ No recent air-quality or volcano-related headlines found in English sources."
+            else "ℹ️ No recent air-quality or volcano-related headlines found for the Laguna region this week."
         )
         html_content += f"""
         <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
