@@ -7,6 +7,7 @@ import logging
 import math
 import time
 import json
+import html
 import urllib.parse
 from datetime import datetime, timedelta
 from requests.exceptions import RequestException
@@ -158,38 +159,127 @@ def is_wind_towards_taal(wind_deg, bearing_to_taal):
     return diff < 90
 
 # =========================
-# FETCH TAAL NEWS
+# AIR QUALITY & ENVIRONMENT NEWS (NewsAPI)
 # =========================
-def get_taal_news():
+NEWS_EXCLUDE_KEYWORDS = [
+    "pypi", "mcp", "data-mcp", "software", "stock market", "crypto",
+    "football", "basketball", "celebrity", "k-pop", "recipe", "horoscope",
+]
+
+# Taal/volcano, regional AQI, and smoke/haze — merged and ranked
+NEWS_SEARCH_QUERIES = [
+    '(Taal OR "Taal Volcano") AND (eruption OR alert OR ash OR activity OR PHIVOLCS OR vog)',
+    '(Philippines OR Laguna OR Luzon OR Calamba) AND ("air quality" OR pollution OR haze OR smog OR "air pollution")',
+    '(Philippines OR Luzon OR Batangas) AND (wildfire OR "forest fire" OR smoke OR ashfall OR "open burning")',
+]
+
+
+def _article_text(article):
+    title = article.get("title") or ""
+    desc = article.get("description") or ""
+    return f"{title} {desc}".lower()
+
+
+def _should_exclude_article(article):
+    text = _article_text(article)
+    return any(kw in text for kw in NEWS_EXCLUDE_KEYWORDS)
+
+
+def _score_and_tag_article(article):
+    """Score relevance for Laguna AQI context; attach display tags."""
+    text = _article_text(article)
+    score = 0
+    tags = []
+
+    if any(
+        t in text
+        for t in (
+            "taal", "phivolcs", "volcanic ash", "volcano", "eruption",
+            "ashfall", "ash fall", "volcanic activity",
+        )
+    ):
+        score += 5
+        tags.append("🌋 Volcano / Taal")
+
+    if any(
+        t in text
+        for t in ("air quality", "aqi", "pollution", "pm2.5", "pm10", "smog", "particulate")
+    ):
+        score += 4
+        tags.append("🌫️ Air quality")
+
+    if any(t in text for t in ("haze", "vog", "smoke", "wildfire", "forest fire", "open burning")):
+        score += 3
+        tags.append("🔥 Smoke / haze")
+
+    if any(
+        t in text
+        for t in ("laguna", "calamba", "biñan", "binan", "luzon", "philippines", "batangas", "manila")
+    ):
+        score += 2
+        tags.append("📍 PH / Laguna region")
+
+    return score, tags
+
+
+def get_air_quality_news(max_articles=6):
+    """
+    Headlines that may explain AQI changes: Taal eruptions, regional pollution,
+    haze, fires, and related coverage (not Taal-only).
+    """
     if not NEWS_API_KEY:
         logger.warning("NEWS_API_KEY not set. Skipping news fetch.")
         return []
-    try:
-        url = "https://newsapi.org/v2/everything"
-        params = {
-            "q": "Taal Volcano eruption OR Taal activity OR Taal alert",
-            "sortBy": "publishedAt",
-            "language": "en",
-            "apiKey": NEWS_API_KEY,
-            "pageSize": 10
-        }
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        articles = data.get("articles", [])
-        filtered = []
-        exclude_keywords = ["pypi", "mcp", "data-mcp", "government data", "philippine", "software"]
+
+    url = "https://newsapi.org/v2/everything"
+    seen_urls = set()
+    scored = []
+
+    for query in NEWS_SEARCH_QUERIES:
+        try:
+            params = {
+                "q": query,
+                "sortBy": "publishedAt",
+                "language": "en",
+                "apiKey": NEWS_API_KEY,
+                "pageSize": 8,
+            }
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            articles = response.json().get("articles", [])
+        except RequestException as e:
+            logger.error(f"News API request failed for query '{query[:40]}...': {e}")
+            continue
+
         for article in articles:
-            title = article.get("title", "").lower()
-            description = article.get("description", "").lower() if article.get("description") else ""
-            if any(keyword in title or keyword in description for keyword in exclude_keywords):
+            link = article.get("url")
+            if not link or link in seen_urls:
                 continue
-            if "taal" in title or "taal" in description:
-                filtered.append(article)
-        return filtered[:5]
-    except RequestException as e:
-        logger.error(f"Failed to fetch Taal news: {e}")
-        return []
+            if _should_exclude_article(article):
+                continue
+            relevance, tags = _score_and_tag_article(article)
+            if relevance < 2:
+                continue
+            seen_urls.add(link)
+            article["_news_score"] = relevance
+            article["_news_tags"] = tags
+            scored.append(article)
+
+    scored.sort(key=lambda a: a["_news_score"], reverse=True)
+    return scored[:max_articles]
+
+
+def _has_elevated_aqi(fetched_aqi):
+    """True if any location is Moderate+ (OpenWeather 1–5) or EPA AQI > 100."""
+    for data in fetched_aqi.values():
+        if not data:
+            continue
+        if data.get("aqi", 0) >= 3:
+            return True
+        pm25 = data.get("pm2_5")
+        if pm25 is not None and pm25_to_aqi(pm25) > 100:
+            return True
+    return False
 
 # =========================
 # AQI HISTORY (OPENWEATHER)
@@ -435,7 +525,10 @@ def build_html_email():
             .footer { background-color: #f5f5f5; padding: 15px; text-align: center; border-radius: 0 0 8px 8px; font-size: 11px; color: #999; }
             .divider { height: 1px; background-color: #e0e0e0; margin: 20px; }
             .news-section { margin: 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px; }
-            .news-title { color: #ff6f00; margin-top: 0; margin-bottom: 15px; }
+            .news-title { color: #ff6f00; margin-top: 0; margin-bottom: 8px; }
+            .news-subtitle { font-size: 13px; color: #666; margin: 0 0 12px 0; line-height: 1.4; }
+            .news-intro { font-size: 13px; color: #c62828; font-weight: bold; margin: 0 0 12px 0; }
+            .news-tags { font-size: 11px; color: #e65100; font-weight: 600; }
             .news-article { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ffe0b2; }
             .news-article:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
             .news-article a { color: #ff6f00; text-decoration: none; font-weight: bold; }
@@ -568,23 +661,32 @@ def build_html_email():
     else:
         logger.warning("No AQI history data for trend chart.")
     # =========================
-    # TAAL NEWS SECTION
+    # AIR QUALITY NEWS SECTION
     # =========================
-    news_articles = get_taal_news()
+    news_articles = get_air_quality_news()
+    elevated_aqi = _has_elevated_aqi(fetched_aqi)
     if news_articles:
         html_content += """
         <div class="divider"></div>
         <div class="news-section">
-            <h3 class="news-title">🔔 Recent Taal Volcano News</h3>
+            <h3 class="news-title">📰 Air Quality &amp; Environment Headlines</h3>
+            <p class="news-subtitle">Coverage that may explain higher AQI — Taal volcano activity, regional pollution, haze, and smoke.</p>
+        """
+        if elevated_aqi:
+            html_content += """
+            <p class="news-intro">⚠️ Elevated AQI detected in at least one location. Related headlines below.</p>
         """
         for article in news_articles:
-            title = article.get("title", "No title")
-            description = article.get("description", "No description")
-            url = article.get("url", "#")
-            source = article.get("source", {}).get("name", "Unknown")
-            # NOTE: consider escaping title/description if content may contain HTML
+            title = html.escape(article.get("title") or "No title")
+            description = html.escape(article.get("description") or "No description")
+            url = html.escape(article.get("url") or "#", quote=True)
+            source = html.escape((article.get("source") or {}).get("name", "Unknown"))
+            tags = article.get("_news_tags", [])
+            tags_line = html.escape(" · ".join(tags)) if tags else ""
+            tags_html = f'<span class="news-tags">{tags_line}</span><br>' if tags_line else ""
             html_content += f"""
             <div class="news-article">
+                {tags_html}
                 <a href="{url}" target="_blank">{title}</a><br>
                 <span class="news-source">{source}</span><br>
                 <p class="news-desc">{description}</p>
@@ -592,9 +694,14 @@ def build_html_email():
             """
         html_content += "</div>"
     else:
-        html_content += """
+        empty_msg = (
+            "ℹ️ No matching headlines this week. AQI drivers can include weather, traffic, fires, or Taal activity not covered in English news."
+            if elevated_aqi
+            else "ℹ️ No recent air-quality or volcano-related headlines found in English sources."
+        )
+        html_content += f"""
         <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
-            <p style="color: #999; margin: 0;">ℹ️ No recent Taal activity reported</p>
+            <p style="color: #999; margin: 0;">{html.escape(empty_msg)}</p>
         </div>
         """
     html_content += """
