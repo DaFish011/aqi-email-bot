@@ -74,6 +74,19 @@ def pm25_to_aqi(pm25):
             return round(((aqi_high - aqi_low) / (c_high - c_low)) * (pm25 - c_low) + aqi_low)
     return 500
 
+def get_aqi_level(aqi_value):
+    """Map AQI value to level (1-5) for color coding"""
+    if aqi_value <= 50:
+        return 1
+    elif aqi_value <= 100:
+        return 2
+    elif aqi_value <= 150:
+        return 3
+    elif aqi_value <= 200:
+        return 4
+    else:
+        return 5
+
 # =========================
 # AQI FUNCTION (OPENWEATHER)
 # =========================
@@ -343,180 +356,124 @@ def compute_daily_data(history_list, current_pm25):
             daily[day_key] = {"label": dt_ph.strftime("%b %d"), "readings": []}
         daily[day_key]["readings"].append(aqi_val)
     sorted_keys = sorted(daily.keys())
-    labels = [daily[k]["label"] for k in sorted_keys]
     values = [round(sum(daily[k]["readings"]) / len(daily[k]["readings"])) for k in sorted_keys]
     # Append today's live value
     if current_pm25 is not None:
         today_aqi = pm25_to_aqi(current_pm25)
-        today_label = (datetime.utcnow() + PH_OFFSET).strftime("%b %d")
-        labels.append(today_label)
         values.append(today_aqi)
-    return labels, values
-
-def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
-    """Align both datasets to a unified sorted x-axis."""
-    all_labels = sorted(
-        set(cal_labels) | set(bin_labels),
-        key=lambda d: datetime.strptime(d, "%b %d").replace(year=datetime.utcnow().year)
-    )
-    cal_map = dict(zip(cal_labels, cal_values))
-    bin_map = dict(zip(bin_labels, bin_values))
-    merged_cal = [cal_map.get(l) for l in all_labels]
-    merged_bin = [bin_map.get(l) for l in all_labels]
-    return all_labels, merged_cal, merged_bin
+    return values
 
 # =========================
-# BUILD TREND CHART URL
+# BUILD BAR CHART URL
 # =========================
-def build_trend_chart_url(labels, cal_values, bin_values):
-    CAL_COLOR = "#00897b"
-    BIN_COLOR = "#f57c00"
-    ALERT_RED = "#d32f2f"
-    BG_FILL_CAL = "rgba(0,137,123,0.15)"
-    BG_FILL_BIN = "rgba(245,124,0,0.15)"
-
-    def point_colors(values, base):
-        return [ALERT_RED if (v is not None and v > 100) else base for v in (values or [])]
-
-    def point_radii(values, is_last=False):
-        radii = [7 if (v is not None and v > 100) else 3 for v in (values or [])]
-        if radii and is_last:
-            radii[-1] = max(radii[-1], 8)
-        return radii
-
+def build_bar_chart_url(cal_values, bin_values):
+    """
+    Build a bar chart showing 30-day AQI history with:
+    - Color-coded bars by AQI level (1-5)
+    - AQI values displayed above bars for values > 100
+    - Light threshold line at 100
+    - Auto-scaled y-axis
+    """
+    
+    # Calculate y-axis max with 15% buffer
     all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
-    max_y = max(max(all_valid) if all_valid else 100, 100) + 40
-    max_y = min(max_y, 320)
+    max_y = max(all_valid) if all_valid else 100
+    y_max = max_y + math.ceil(max_y * 0.15)
 
-    # Pre-compute per-point datalabel colors and display flags
-    def dl_colors(values):
-        return [ALERT_RED if (v is not None and v > 100) else "transparent" for v in (values or [])]
-
-    def dl_display(values):
-        return [True if (v is not None and v > 100) else False for v in (values or [])]
-
+    # Chart config for both Calamba and Biñan
     chart_config = {
-        "type": "line",
+        "type": "bar",
         "data": {
-            "labels": labels or [],
+            "labels": [str(i) for i in range(1, 31)],
             "datasets": [
                 {
-                    "label": "Calamba",
+                    "label": "Calamba AQI",
                     "data": cal_values or [],
-                    "borderColor": CAL_COLOR,
-                    "backgroundColor": BG_FILL_CAL,
-                    "borderWidth": 2,
-                    "fill": True,
-                    "pointBackgroundColor": point_colors(cal_values, CAL_COLOR),
-                    "pointBorderColor": point_colors(cal_values, CAL_COLOR),
-                    "pointRadius": point_radii(cal_values, is_last=True),
-                    "pointHoverRadius": 6,
-                    "tension": 0.3,
-                    "datalabels": {
-                        "color": dl_colors(cal_values),
-                        "display": dl_display(cal_values),
-                        "anchor": "end",
-                        "align": "top",
-                        "offset": 2,
-                        "font": {"size": 10, "weight": "bold"}
-                    }
+                    "backgroundColor": [aqi_map[get_aqi_level(v)]["color"] for v in (cal_values or [])],
+                    "borderWidth": 0,
+                    "borderRadius": 3,
+                    "borderSkipped": False
                 },
                 {
-                    "label": "Biñan",
+                    "label": "Biñan AQI",
                     "data": bin_values or [],
-                    "borderColor": BIN_COLOR,
-                    "backgroundColor": BG_FILL_BIN,
-                    "borderWidth": 2,
-                    "fill": True,
-                    "pointBackgroundColor": point_colors(bin_values, BIN_COLOR),
-                    "pointBorderColor": point_colors(bin_values, BIN_COLOR),
-                    "pointRadius": point_radii(bin_values, is_last=True),
-                    "pointHoverRadius": 6,
-                    "tension": 0.3,
-                    "datalabels": {
-                        "color": dl_colors(bin_values),
-                        "display": dl_display(bin_values),
-                        "anchor": "end",
-                        "align": "top",
-                        "offset": 2,
-                        "font": {"size": 10, "weight": "bold"}
-                    }
+                    "backgroundColor": [aqi_map[get_aqi_level(v)]["color"] for v in (bin_values or [])],
+                    "borderWidth": 0,
+                    "borderRadius": 3,
+                    "borderSkipped": False
                 }
             ]
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
+            "interaction": {"mode": "index", "intersect": False},
             "plugins": {
-                "title": {
-                    "display": True,
-                    "text": "Laguna AQI Trends – Last 30 Days",
-                    "color": "#222",
-                    "font": {"size": 16, "weight": "700"},
-                    "padding": {"top": 8, "bottom": 4}
-                },
-                # 3. Legend at bottom with circle point style
-                "legend": {
-                    "position": "bottom",
-                    "align": "center",
-                    "labels": {
-                        "usePointStyle": True,
-                        "pointStyleWidth": 12,
-                        "padding": 24,
-                        "color": "#333",
-                        "font": {"size": 13, "weight": "600"}
+                "legend": {"display": False},
+                "datalabels": {
+                    "anchor": "end",
+                    "align": "end",
+                    "offset": 0,
+                    "rotation": -45,
+                    "font": {"size": 11, "weight": "bold"},
+                    "color": "#dc2626",
+                    "display": {
+                        "0": [v > 100 for v in (cal_values or [])],
+                        "1": [v > 100 for v in (bin_values or [])]
                     }
                 },
-                # 1. Red dashed threshold line at 100
-                "autocolors": False,
-                "annotation": {
-                    "annotations": [
-                        {
-                            "type": "line",
-                            "mode": "horizontal",
-                            "scaleID": "y",
-                            "value": 100,
-                            "borderColor": ALERT_RED,
-                            "borderDash": [8, 5],
-                            "borderWidth": 2,
-                            "label": {
-                                "enabled": True,
-                                "content": "⚠ Unhealthy (AQI 100)",
-                                "position": "start",
-                                "xAdjust": 10,
-                                "backgroundColor": ALERT_RED,
-                                "color": "#fff",
-                                "font": {"size": 11, "weight": "700"},
-                                "padding": {"x": 8, "y": 4},
-                                "cornerRadius": 4
-                            }
-                        }
-                    ]
+                "tooltip": {
+                    "backgroundColor": "rgba(0,0,0,0.85)",
+                    "padding": 10,
+                    "titleFont": {"size": 12, "weight": 600},
+                    "bodyFont": {"size": 11},
+                    "cornerRadius": 6,
+                    "displayColors": False
                 }
             },
             "scales": {
                 "x": {
-                    "ticks": {"color": "#555", "maxRotation": 30, "autoSkip": True},
-                    "grid": {"display": False}
+                    "grid": {"display": False, "drawBorder": False},
+                    "ticks": {
+                        "color": "#666",
+                        "font": {"size": 10},
+                        "maxRotation": 0,
+                        "callback": {
+                            "index": [6, 13, 20, 27],
+                            "labels": ["Day 7", "Day 14", "Day 21", "Day 28"]
+                        }
+                    }
                 },
                 "y": {
-                    "title": {
-                        "display": True,
-                        "text": "Air Quality Index (AQI)",
-                        "color": "#555",
-                        "font": {"size": 12}
-                    },
-                    "grid": {"color": "#f0f0f0"},
-                    "ticks": {"color": "#555"},
                     "min": 0,
-                    "max": max_y
+                    "max": y_max,
+                    "grid": {
+                        "color": "rgba(0,0,0,0.07)",
+                        "drawBorder": False,
+                        "drawTicks": False
+                    },
+                    "ticks": {
+                        "color": "#666",
+                        "font": {"size": 10},
+                        "stepSize": max(10, math.ceil(y_max / 5 / 10) * 10),
+                        "padding": 8
+                    }
                 }
             }
         }
     }
 
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?w=860&h=430&c={encoded}"
+    chart_url = f"https://quickchart.io/chart?w=860&h=300&c={encoded}"
+
+    url_length = len(chart_url)
+    logger.info(f"Bar chart URL generated ({url_length} chars, limit: 2000)")
+    
+    if url_length > 2000:
+        logger.error(f"Chart URL exceeds limit ({url_length} chars).")
+        return None
+    
+    return chart_url
 
 # =========================
 # BUILD HTML EMAIL
@@ -618,7 +575,7 @@ def build_html_email():
         card_html = f"""
                 <td style="width: 50%; padding: 20px; vertical-align: top;">
                 <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
-                    <div class="location-name">📍 {loc['name']}</div>
+                    <div class="location-name">📍 {html.escape(loc['name'])}</div>
                     {alert_message}
                     <div class="aqi-box" style="background-color: {aqi_info['color']};">
                         <div class="aqi-value">{aqi_level}</div>
@@ -665,7 +622,7 @@ def build_html_email():
             </table>
     """
     # =========================
-    # 30-DAY AQI TREND CHART
+    # 30-DAY BAR CHART
     # =========================
     logger.info("Fetching 30-day AQI history...")
     cal = locations[0]
@@ -676,23 +633,25 @@ def build_html_email():
     bin_history = get_aqi_history(bin_["lat"], bin_["lon"])
     cal_pm25_today = cal_aqi_now.get("pm2_5") if cal_aqi_now else None
     bin_pm25_today = bin_aqi_now.get("pm2_5") if bin_aqi_now else None
-    cal_labels, cal_values = compute_daily_data(cal_history, cal_pm25_today)
-    bin_labels, bin_values = compute_daily_data(bin_history, bin_pm25_today)
-    if cal_labels or bin_labels:
-        labels, cal_values, bin_values = merge_labels(
-            cal_labels, cal_values, bin_labels, bin_values
-        )
-        chart_url = build_trend_chart_url(labels, cal_values, bin_values)
-        html_content += f"""
-        <div class="divider"></div>
-        <div class="trend-section">
-            <p class="trend-title">📈 30-Day AQI Trend</p>
-            <p class="trend-subtitle">Past 30 days: daily average AQI · Today: live reading · Red points = above threshold (100)</p>
-            <img src="{chart_url}" alt="30-day AQI trend" class="trend-img" />
-        </div>
-        """
+    cal_values = compute_daily_data(cal_history, cal_pm25_today)
+    bin_values = compute_daily_data(bin_history, bin_pm25_today)
+    
+    if cal_values or bin_values:
+        chart_url = build_bar_chart_url(cal_values, bin_values)
+        if chart_url:
+            html_content += f"""
+            <div class="divider"></div>
+            <div class="trend-section">
+                <p class="trend-title">📊 30-Day AQI History</p>
+                <p class="trend-subtitle">Daily AQI readings for Calamba and Biñan · Color-coded by severity level</p>
+                <img src="{chart_url}" alt="30-day AQI bar chart" class="trend-img" />
+            </div>
+            """
+        else:
+            logger.warning("Chart URL generation failed.")
     else:
-        logger.warning("No AQI history data for trend chart.")
+        logger.warning("No AQI history data for chart.")
+    
     # =========================
     # AIR QUALITY NEWS SECTION
     # =========================
