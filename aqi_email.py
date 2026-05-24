@@ -392,28 +392,25 @@ def build_bar_chart_plotly(location_name, values):
             showlegend=False
         ))
 
-        # Add threshold line at 100
+        # Add threshold line at 100 (with name for legend)
         fig.add_hline(
             y=100,
             line=dict(color="rgba(211, 47, 47, 0.2)", width=2, dash="dash"),
-            annotation_text="Threshold",
-            annotation_position="right",
-            annotation_font=dict(size=9, color="rgba(211, 47, 47, 0.5)")
+            name="Threshold (100)"
         )
 
-        # Get today's date for display on left
+        # Get today's date and AQI value for display
         today = datetime.utcnow() + PH_OFFSET
         today_str = today.strftime("%a, %b %d")
+        today_aqi = int(values[-1]) if values[-1] is not None else 0
 
-        # Update layout - DATE ON LEFT, Y-AXIS ON RIGHT
+        # Update layout - CENTER TITLE, AQI IN UPPER LEFT
         fig.update_layout(
             title=dict(
-                text=f"<b>{location_name}</b><br><span style='font-size:12px; color:#999'>{today_str}</span>",
+                text=f"<b>{location_name} - 30-Day AQI History</b>",
                 font=dict(size=14, color="#333"),
-                x=0.0,
-                xanchor="left",
-                y=0.98,
-                yanchor="top"
+                x=0.5,
+                xanchor="center"
             ),
             xaxis=dict(
                 title=None,
@@ -436,11 +433,32 @@ def build_bar_chart_plotly(location_name, values):
             ),
             plot_bgcolor="rgba(250,250,250,0.5)",
             paper_bgcolor="white",
-            margin=dict(l=40, r=60, t=80, b=40),
+            margin=dict(l=120, r=60, t=80, b=40),
             width=860,
             height=320,
-            showlegend=False,
+            showlegend=True,
+            legend=dict(
+                x=0.02,
+                y=0.55,
+                bgcolor="rgba(255,255,255,0.9)",
+                bordercolor="rgba(0,0,0,0.1)",
+                borderwidth=1
+            ),
             hovermode="x"
+        )
+
+        # Add annotation for AQI value in upper left
+        fig.add_annotation(
+            text=f"<b style='font-size:32px'>{today_aqi}</b><br><span style='font-size:11px; color:#999'>{today_str}</span>",
+            xref="paper", yref="paper",
+            x=0.02, y=0.98,
+            showarrow=False,
+            xanchor="left", yanchor="top",
+            bgcolor="white",
+            bordercolor="rgba(0,0,0,0.1)",
+            borderwidth=1,
+            borderpad=12,
+            font=dict(size=12, color="#333")
         )
 
         # Save to temporary file
