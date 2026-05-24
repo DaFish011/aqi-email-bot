@@ -590,12 +590,12 @@ def build_html_email():
         temp = weather_data.get("temp", "-") if weather_data else "-"
         wind_speed = weather_data.get("wind_speed", "-") if weather_data else "-"
         wind_deg = weather_data.get("wind_deg") if weather_data else None
-        wind_dir = get_wind_direction(wind_deg)
         pm10 = aqi_data.get("pm10", "-")
         no2 = aqi_data.get("no2", "-")
         o3 = aqi_data.get("o3", "-")
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
         wind_message = generate_wind_message(wind_deg, bearing_to_taal, wind_speed)
+        wind_compass = get_compass_direction(wind_deg) or "-"
         
         is_alert = aqi_level >= 4
         alert_class = "alert-card" if is_alert else ""
@@ -629,7 +629,7 @@ def build_html_email():
                         </td>
                         <td class="weather-cell">
                             <div class="weather-item-label">Direction</div>
-                            <div class="weather-item-value">{wind_dir}</div>
+                            <div class="weather-item-value">{wind_compass}</div>
                         </td>
                     </tr>
                     </table>
