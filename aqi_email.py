@@ -384,7 +384,7 @@ def build_bar_chart_url_single(location_name, values):
     - AQI values displayed above bars for values > 100 (tilted upward)
     - Light threshold line at 100
     - Auto-scaled y-axis
-    - Saturday labels on x-axis
+    - Date labels on x-axis
     """
     
     if not values or len(values) == 0:
@@ -396,16 +396,20 @@ def build_bar_chart_url_single(location_name, values):
         
         # Calculate y-axis max with 15% buffer
         all_valid = [v for v in values if v is not None]
-        logger.info(f"Valid values for {location_name}: {len(all_valid)}")
-        
         max_y = max(all_valid) if all_valid else 100
         y_max = max_y + math.ceil(max_y * 0.15)
-        logger.info(f"{location_name} - Max Y: {max_y}, Y-Axis Max: {y_max}")
 
-        # Create day labels (1-30)
-        days = [str(i) for i in range(1, len(values) + 1)]
-        logger.info(f"{location_name} - Days: {len(days)}")
-
+        # Generate date labels (last 30 days) - show only Saturdays
+        today = datetime.utcnow() + PH_OFFSET
+        date_labels = []
+        for i in range(len(values)):
+            date_obj = today - timedelta(days=len(values) - 1 - i)
+            # Show only Saturday dates, blank for others
+            if date_obj.weekday() == 5:  # Saturday
+                date_labels.append(date_obj.strftime("%b %d"))
+            else:
+                date_labels.append("")
+        
         # Create colors list
         colors = []
         for v in values:
@@ -414,56 +418,108 @@ def build_bar_chart_url_single(location_name, values):
             else:
                 color = "#ccc"
             colors.append(color)
-        logger.info(f"{location_name} - Colors generated: {len(colors)}")
 
-        # Create chart config - SIMPLIFIED
+        # Create datalabels display (only show for >100)
+        datalabels_display = [v > 100 if v is not None else False for v in values]
+
+        # Create chart config with threshold line plugin
         chart_config = {
             "type": "bar",
             "data": {
-                "labels": days,
+                "labels": date_labels,
                 "datasets": [
                     {
                         "label": location_name,
                         "data": values,
                         "backgroundColor": colors,
-                        "borderWidth": 0
+                        "borderWidth": 0,
+                        "borderRadius": 3,
+                        "borderSkipped": False,
+                        "datalabels": {
+                            "anchor": "end",
+                            "align": "end",
+                            "offset": 0,
+                            "rotation": -45,
+                            "font": {"size": 11, "weight": "bold"},
+                            "color": "#dc2626",
+                            "display": datalabels_display
+                        }
                     }
                 ]
             },
             "options": {
                 "responsive": True,
                 "maintainAspectRatio": False,
+                "interaction": {"mode": "index", "intersect": False},
+                "plugins": {
+                    "legend": {"display": False},
+                    "datalabels": {
+                        "anchor": "end",
+                        "align": "end",
+                        "offset": 0,
+                        "rotation": -45,
+                        "font": {"size": 11, "weight": "bold"},
+                        "color": "#dc2626"
+                    },
+                    "tooltip": {
+                        "backgroundColor": "rgba(0,0,0,0.85)",
+                        "padding": 10,
+                        "titleFont": {"size": 12, "weight": 600},
+                        "bodyFont": {"size": 11},
+                        "cornerRadius": 6,
+                        "displayColors": False
+                    }
+                },
                 "scales": {
                     "x": {
-                        "grid": {"display": False}
+                        "grid": {"display": False, "drawBorder": False},
+                        "ticks": {
+                            "color": "#666",
+                            "font": {"size": 9},
+                            "maxRotation": 45,
+                            "autoSkip": True,
+                            "autoSkipPadding": 20
+                        }
                     },
                     "y": {
                         "min": 0,
-                        "max": y_max
+                        "max": y_max,
+                        "grid": {"color": "rgba(0,0,0,0.07)", "drawBorder": False, "drawTicks": False},
+                        "ticks": {
+                            "color": "#666",
+                            "font": {"size": 10},
+                            "stepSize": max(10, math.ceil(y_max / 5 / 10) * 10),
+                            "padding": 8
+                        }
                     }
                 }
-            }
+            },
+            "plugins": [
+                {
+                    "id": "thresholdLine",
+                    "afterDatasetsDraw": {
+                        "100": "rgba(220,38,38,0.2)",
+                        "lineWidth": 1.5,
+                        "lineDash": [4, 4]
+                    }
+                }
+            ]
         }
 
         logger.info(f"{location_name} - Chart config created")
 
         # Encode and generate URL
         json_str = json.dumps(chart_config)
-        logger.info(f"{location_name} - JSON size before encoding: {len(json_str)} chars")
-        
         encoded = urllib.parse.quote(json_str)
-        logger.info(f"{location_name} - JSON size after encoding: {len(encoded)} chars")
-        
         chart_url = f"https://quickchart.io/chart?w=860&h=320&c={encoded}"
 
         url_length = len(chart_url)
-        logger.info(f"Chart URL for {location_name} generated ({url_length} chars, limit: 2000)")
+        logger.info(f"Chart URL for {location_name} generated ({url_length} chars)")
         
         if url_length > 2000:
-            logger.error(f"Chart URL for {location_name} EXCEEDS LIMIT ({url_length} chars)")
+            logger.error(f"Chart URL for {location_name} exceeds limit ({url_length} chars)")
             return None
         
-        logger.info(f"Chart URL for {location_name} is VALID and will be included")
         return chart_url
     except Exception as e:
         logger.error(f"Failed to generate chart URL for {location_name}: {e}", exc_info=True)
