@@ -2,15 +2,19 @@ import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 import os
 import logging
 import math
 import time
 import json
 import html
-import urllib.parse
+import base64
+from io import BytesIO
 from datetime import datetime, timedelta
 from requests.exceptions import RequestException
+import plotly.graph_objects as go
 
 # =========================
 # LOGGING
@@ -190,7 +194,6 @@ NEWS_EXCLUDE_KEYWORDS = [
     "football", "basketball", "celebrity", "k-pop", "recipe", "horoscope",
 ]
 
-# Focus on Laguna region (Calamba, Biñan) and immediate vicinity
 NEWS_SEARCH_QUERIES = [
     '(Calamba OR Biñan OR Binan) AND ("air quality" OR pollution OR haze OR smog OR "air pollution")',
     '(Laguna province) AND ("air quality" OR pollution OR haze OR smog OR ashfall)',
@@ -198,58 +201,36 @@ NEWS_SEARCH_QUERIES = [
     '(Laguna OR Calamba OR Biñan) AND (wildfire OR "forest fire" OR smoke OR "open burning")',
 ]
 
-
 def _article_text(article):
     title = article.get("title") or ""
     desc = article.get("description") or ""
     return f"{title} {desc}".lower()
 
-
 def _should_exclude_article(article):
     text = _article_text(article)
     return any(kw in text for kw in NEWS_EXCLUDE_KEYWORDS)
 
-
 def _is_within_week(article_date_str):
-    """
-    Check if article was published within the past week (Sunday to Saturday).
-    Since email is sent Saturday at 8 AM, we look back 7 days.
-    """
     try:
-        # Parse ISO format date from NewsAPI (e.g., "2024-05-18T10:30:00Z")
         article_date = datetime.fromisoformat(article_date_str.replace("Z", "+00:00"))
-        # Convert to PH timezone
         article_date_ph = article_date + PH_OFFSET
-        # Current time in PH timezone (Saturday 8 AM)
         now_ph = datetime.utcnow() + PH_OFFSET
-        # One week ago
         one_week_ago = now_ph - timedelta(days=7)
         return article_date_ph >= one_week_ago
     except (ValueError, TypeError):
         logger.warning(f"Could not parse article date: {article_date_str}")
         return False
 
-
 def _score_and_tag_article(article):
-    """Score relevance for Laguna AQI context; attach display tags."""
     text = _article_text(article)
     score = 0
     tags = []
 
-    if any(
-        t in text
-        for t in (
-            "taal", "phivolcs", "volcanic ash", "volcano", "eruption",
-            "ashfall", "ash fall", "volcanic activity",
-        )
-    ):
+    if any(t in text for t in ("taal", "phivolcs", "volcanic ash", "volcano", "eruption", "ashfall", "ash fall", "volcanic activity")):
         score += 5
         tags.append("🌋 Volcano / Taal")
 
-    if any(
-        t in text
-        for t in ("air quality", "aqi", "pollution", "pm2.5", "pm10", "smog", "particulate")
-    ):
+    if any(t in text for t in ("air quality", "aqi", "pollution", "pm2.5", "pm10", "smog", "particulate")):
         score += 4
         tags.append("🌫️ Air quality")
 
@@ -257,21 +238,13 @@ def _score_and_tag_article(article):
         score += 3
         tags.append("🔥 Smoke / haze")
 
-    if any(
-        t in text
-        for t in ("laguna", "calamba", "biñan", "binan")
-    ):
+    if any(t in text for t in ("laguna", "calamba", "biñan", "binan")):
         score += 2
         tags.append("📍 Laguna / Calamba / Biñan")
 
     return score, tags
 
-
 def get_air_quality_news(max_articles=6):
-    """
-    Headlines specific to Calamba, Biñan, and Laguna region that may explain AQI changes.
-    Only includes articles from the past week (Sunday to Saturday).
-    """
     if not NEWS_API_KEY:
         logger.warning("NEWS_API_KEY not set. Skipping news fetch.")
         return []
@@ -302,7 +275,6 @@ def get_air_quality_news(max_articles=6):
                 continue
             if _should_exclude_article(article):
                 continue
-            # Check if article is within the past week
             if not _is_within_week(article.get("publishedAt", "")):
                 continue
             relevance, tags = _score_and_tag_article(article)
@@ -316,9 +288,7 @@ def get_air_quality_news(max_articles=6):
     scored.sort(key=lambda a: a["_news_score"], reverse=True)
     return scored[:max_articles]
 
-
 def _has_elevated_aqi(fetched_aqi):
-    """True if any location is Moderate+ (OpenWeather 1–5) or EPA AQI > 100."""
     for data in fetched_aqi.values():
         if not data:
             continue
@@ -348,11 +318,6 @@ def get_aqi_history(lat, lon, days=30):
         return []
 
 def compute_daily_data(history_list, current_pm25):
-    """
-    Past days  → daily average AQI (EPA formula from PM2.5).
-    Today      → live current AQI value passed in as current_pm25.
-    Skips today's readings from history to avoid mixing live + historical.
-    """
     today_key = (datetime.utcnow() + PH_OFFSET).strftime("%Y-%m-%d")
     daily = {}
     for entry in history_list:
@@ -360,7 +325,7 @@ def compute_daily_data(history_list, current_pm25):
         dt_ph = dt_utc + PH_OFFSET
         day_key = dt_ph.strftime("%Y-%m-%d")
         if day_key == today_key:
-            continue  # today handled separately via live API
+            continue
         pm2_5 = entry.get("components", {}).get("pm2_5") or 0
         aqi_val = pm25_to_aqi(pm2_5)
         if day_key not in daily:
@@ -368,23 +333,23 @@ def compute_daily_data(history_list, current_pm25):
         daily[day_key]["readings"].append(aqi_val)
     sorted_keys = sorted(daily.keys())
     values = [round(sum(daily[k]["readings"]) / len(daily[k]["readings"])) for k in sorted_keys]
-    # Append today's live value
     if current_pm25 is not None:
         today_aqi = pm25_to_aqi(current_pm25)
         values.append(today_aqi)
     return values
 
 # =========================
-# BUILD BAR CHART URL (TWO SEPARATE CHARTS)
+# BUILD BAR CHART WITH PLOTLY (PNG IMAGE)
 # =========================
-def build_bar_chart_url_single(location_name, values):
+def build_bar_chart_plotly(location_name, values):
     """
-    Build a single bar chart showing 30-day AQI history for one location with:
+    Build a professional bar chart using Plotly with:
     - Color-coded bars by AQI level (1-5)
-    - AQI values displayed above bars for values > 100 (tilted upward)
+    - AQI values displayed above bars for values > 100
     - Light threshold line at 100
     - Auto-scaled y-axis
-    - Date labels on x-axis
+    - Saturday dates on x-axis only
+    - Returns as PNG image (base64 encoded)
     """
     
     if not values or len(values) == 0:
@@ -392,137 +357,109 @@ def build_bar_chart_url_single(location_name, values):
         return None
     
     try:
-        logger.info(f"Building chart for {location_name} with {len(values)} data points")
+        logger.info(f"Building Plotly chart for {location_name}")
         
         # Calculate y-axis max with 15% buffer
         all_valid = [v for v in values if v is not None]
         max_y = max(all_valid) if all_valid else 100
         y_max = max_y + math.ceil(max_y * 0.15)
 
-        # Generate date labels (last 30 days) - show only Saturdays
+        # Generate date labels - show only Saturdays
         today = datetime.utcnow() + PH_OFFSET
         date_labels = []
+        day_numbers = []
         for i in range(len(values)):
             date_obj = today - timedelta(days=len(values) - 1 - i)
-            # Show only Saturday dates, blank for others
+            day_numbers.append(i + 1)
+            # Show only Saturday dates
             if date_obj.weekday() == 5:  # Saturday
                 date_labels.append(date_obj.strftime("%b %d"))
             else:
                 date_labels.append("")
         
-        # Create colors list
+        # Create colors list and text labels
         colors = []
+        text_labels = []
         for v in values:
             if v is not None:
                 color = aqi_map[get_aqi_level(v)]["color"]
+                # Only show text for values > 100
+                text = str(int(v)) if v > 100 else ""
             else:
                 color = "#ccc"
+                text = ""
             colors.append(color)
+            text_labels.append(text)
 
-        # Create datalabels display (only show for >100)
-        datalabels_display = [v > 100 if v is not None else False for v in values]
+        # Create figure
+        fig = go.Figure()
 
-        # Create chart config with threshold line plugin
-        chart_config = {
-            "type": "bar",
-            "data": {
-                "labels": date_labels,
-                "datasets": [
-                    {
-                        "label": location_name,
-                        "data": values,
-                        "backgroundColor": colors,
-                        "borderWidth": 0,
-                        "borderRadius": 3,
-                        "borderSkipped": False,
-                        "datalabels": {
-                            "anchor": "end",
-                            "align": "end",
-                            "offset": 0,
-                            "rotation": -45,
-                            "font": {"size": 11, "weight": "bold"},
-                            "color": "#dc2626",
-                            "display": datalabels_display
-                        }
-                    }
-                ]
-            },
-            "options": {
-                "responsive": True,
-                "maintainAspectRatio": False,
-                "interaction": {"mode": "index", "intersect": False},
-                "plugins": {
-                    "legend": {"display": False},
-                    "datalabels": {
-                        "anchor": "end",
-                        "align": "end",
-                        "offset": 0,
-                        "rotation": -45,
-                        "font": {"size": 11, "weight": "bold"},
-                        "color": "#dc2626"
-                    },
-                    "tooltip": {
-                        "backgroundColor": "rgba(0,0,0,0.85)",
-                        "padding": 10,
-                        "titleFont": {"size": 12, "weight": 600},
-                        "bodyFont": {"size": 11},
-                        "cornerRadius": 6,
-                        "displayColors": False
-                    }
-                },
-                "scales": {
-                    "x": {
-                        "grid": {"display": False, "drawBorder": False},
-                        "ticks": {
-                            "color": "#666",
-                            "font": {"size": 9},
-                            "maxRotation": 45,
-                            "autoSkip": True,
-                            "autoSkipPadding": 20
-                        }
-                    },
-                    "y": {
-                        "min": 0,
-                        "max": y_max,
-                        "grid": {"color": "rgba(0,0,0,0.07)", "drawBorder": False, "drawTicks": False},
-                        "ticks": {
-                            "color": "#666",
-                            "font": {"size": 10},
-                            "stepSize": max(10, math.ceil(y_max / 5 / 10) * 10),
-                            "padding": 8
-                        }
-                    }
-                }
-            },
-            "plugins": [
-                {
-                    "id": "thresholdLine",
-                    "afterDatasetsDraw": {
-                        "100": "rgba(220,38,38,0.2)",
-                        "lineWidth": 1.5,
-                        "lineDash": [4, 4]
-                    }
-                }
-            ]
-        }
+        # Add bar chart
+        fig.add_trace(go.Bar(
+            x=day_numbers,
+            y=values,
+            marker=dict(
+                color=colors,
+                line=dict(width=0)
+            ),
+            text=text_labels,
+            textposition="outside",
+            textfont=dict(size=10, color="#dc2626", family="Arial Black"),
+            hovertemplate="<b>Day %{x}</b><br>AQI: %{y}<extra></extra>",
+            showlegend=False
+        ))
 
-        logger.info(f"{location_name} - Chart config created")
+        # Add threshold line at 100
+        fig.add_hline(
+            y=100,
+            line=dict(color="rgba(220,38,38,0.3)", width=2, dash="dash"),
+            annotation_text="AQI Threshold (100)",
+            annotation_position="right",
+            annotation_font=dict(size=10, color="rgba(220,38,38,0.6)")
+        )
 
-        # Encode and generate URL
-        json_str = json.dumps(chart_config)
-        encoded = urllib.parse.quote(json_str)
-        chart_url = f"https://quickchart.io/chart?w=860&h=320&c={encoded}"
+        # Update layout
+        fig.update_layout(
+            title=dict(
+                text=f"<b>{location_name} - 30-Day AQI History</b>",
+                font=dict(size=16, color="#333"),
+                x=0.5,
+                xanchor="center"
+            ),
+            xaxis=dict(
+                title="Day",
+                ticktext=date_labels,
+                tickvals=day_numbers,
+                tickfont=dict(size=10),
+                gridcolor="rgba(0,0,0,0.05)",
+                showgrid=False,
+                zeroline=False
+            ),
+            yaxis=dict(
+                title="Air Quality Index (AQI)",
+                range=[0, y_max],
+                gridcolor="rgba(0,0,0,0.07)",
+                zeroline=False,
+                tickfont=dict(size=10)
+            ),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=60, r=60, t=80, b=60),
+            width=860,
+            height=320,
+            showlegend=False,
+            hovermode="x"
+        )
 
-        url_length = len(chart_url)
-        logger.info(f"Chart URL for {location_name} generated ({url_length} chars)")
+        # Convert to PNG and encode as base64
+        img_bytes = fig.to_image(format="png")
+        img_base64 = base64.b64encode(img_bytes).decode()
         
-        if url_length > 2000:
-            logger.error(f"Chart URL for {location_name} exceeds limit ({url_length} chars)")
-            return None
-        
-        return chart_url
+        logger.info(f"Chart for {location_name} generated successfully")
+        return img_base64
+
     except Exception as e:
-        logger.error(f"Failed to generate chart URL for {location_name}: {e}", exc_info=True)
+        logger.error(f"Failed to generate chart for {location_name}: {e}", exc_info=True)
         return None
 
 # =========================
@@ -590,7 +527,6 @@ def build_html_email():
     for loc in locations:
         aqi_data = get_aqi_data(loc["lat"], loc["lon"])
         weather_data = get_weather_data(loc["lat"], loc["lon"])
-        # Store for reuse in the trend chart
         fetched_aqi[loc["name"]] = aqi_data
         if not aqi_data:
             logger.warning(f"No AQI data for {loc['name']}")
@@ -609,7 +545,6 @@ def build_html_email():
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
         wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
         
-        # User-friendly wind direction messaging
         if wind_towards_taal:
             wind_message = f"🌋 Wind is blowing <strong>away from Taal</strong> (low volcanic impact expected)"
         else:
@@ -687,34 +622,34 @@ def build_html_email():
         logger.info(f"Calamba: {len(cal_values)} days, Biñan: {len(bin_values)} days")
         
         # Generate Calamba chart
-        cal_chart_url = build_bar_chart_url_single("Calamba", cal_values)
+        cal_chart_base64 = build_bar_chart_plotly("Calamba, Laguna", cal_values)
         
         # Generate Binan chart
-        bin_chart_url = build_bar_chart_url_single("Biñan", bin_values)
+        bin_chart_base64 = build_bar_chart_plotly("Biñan, Laguna", bin_values)
         
         # Add both charts to email
-        if cal_chart_url:
+        if cal_chart_base64:
             html_content += f"""
             <div class="divider"></div>
             <div class="trend-section">
                 <p class="trend-title">📊 Calamba - 30-Day AQI History</p>
                 <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="{cal_chart_url}" alt="Calamba 30-day AQI bar chart" class="trend-img" />
+                <img src="data:image/png;base64,{cal_chart_base64}" alt="Calamba 30-day AQI bar chart" class="trend-img" />
             </div>
             """
         else:
-            logger.warning("Failed to generate Calamba chart URL")
+            logger.warning("Failed to generate Calamba chart")
         
-        if bin_chart_url:
+        if bin_chart_base64:
             html_content += f"""
             <div class="trend-section">
                 <p class="trend-title">📊 Biñan - 30-Day AQI History</p>
                 <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="{bin_chart_url}" alt="Biñan 30-day AQI bar chart" class="trend-img" />
+                <img src="data:image/png;base64,{bin_chart_base64}" alt="Biñan 30-day AQI bar chart" class="trend-img" />
             </div>
             """
         else:
-            logger.warning("Failed to generate Biñan chart URL")
+            logger.warning("Failed to generate Biñan chart")
     else:
         logger.warning("No AQI history data for charts")
     
