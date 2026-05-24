@@ -10,8 +10,6 @@ import math
 import time
 import json
 import html
-import base64
-from io import BytesIO
 from datetime import datetime, timedelta
 from requests.exceptions import RequestException
 import plotly.graph_objects as go
@@ -44,7 +42,6 @@ RECEIVERS_STR = os.getenv("RECEIVERS")
 if not all([API_KEY, SENDER, PASSWORD, RECEIVERS_STR]):
     logger.error("Missing required environment variables: API_KEY, EMAIL_USER, EMAIL_PASS, or RECEIVERS")
     exit(1)
-# Parse comma-separated email addresses from RECEIVERS environment variable
 RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 
 # =========================
@@ -90,7 +87,6 @@ def pm25_to_aqi(pm25):
     return 500
 
 def get_aqi_level(aqi_value):
-    """Map AQI value to level (1-5) for color coding"""
     if aqi_value <= 50:
         return 1
     elif aqi_value <= 100:
@@ -174,11 +170,6 @@ def get_bearing(lat1, lon1, lat2, lon2):
     y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     bearing = math.degrees(math.atan2(x, y))
     return (bearing + 360) % 360
-
-def bearing_to_direction(bearing):
-    directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-                  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-    return directions[round(bearing / 22.5) % 16]
 
 def is_wind_towards_taal(wind_deg, bearing_to_taal):
     diff = abs(wind_deg - bearing_to_taal)
@@ -339,17 +330,11 @@ def compute_daily_data(history_list, current_pm25):
     return values
 
 # =========================
-# BUILD BAR CHART WITH PLOTLY (PNG IMAGE)
+# BUILD BAR CHART WITH PLOTLY (SAVED AS FILE)
 # =========================
 def build_bar_chart_plotly(location_name, values):
     """
-    Build a professional bar chart using Plotly with:
-    - Color-coded bars by AQI level (1-5)
-    - AQI values displayed above bars for values > 100
-    - Light threshold line at 100
-    - Auto-scaled y-axis
-    - Saturday dates on x-axis only
-    - Returns as PNG image (base64 encoded)
+    Build a professional bar chart using Plotly and save as PNG file.
     """
     
     if not values or len(values) == 0:
@@ -371,7 +356,6 @@ def build_bar_chart_plotly(location_name, values):
         for i in range(len(values)):
             date_obj = today - timedelta(days=len(values) - 1 - i)
             day_numbers.append(i + 1)
-            # Show only Saturday dates
             if date_obj.weekday() == 5:  # Saturday
                 date_labels.append(date_obj.strftime("%b %d"))
             else:
@@ -383,7 +367,6 @@ def build_bar_chart_plotly(location_name, values):
         for v in values:
             if v is not None:
                 color = aqi_map[get_aqi_level(v)]["color"]
-                # Only show text for values > 100
                 text = str(int(v)) if v > 100 else ""
             else:
                 color = "#ccc"
@@ -451,12 +434,13 @@ def build_bar_chart_plotly(location_name, values):
             hovermode="x"
         )
 
-        # Convert to PNG and encode as base64
-        img_bytes = fig.to_image(format="png")
-        img_base64 = base64.b64encode(img_bytes).decode()
+        # Save to temporary file
+        safe_name = location_name.replace(",", "").replace(" ", "_").lower()
+        filepath = f"/tmp/{safe_name}_chart.png"
+        fig.write_image(filepath)
         
-        logger.info(f"Chart for {location_name} generated successfully")
-        return img_base64
+        logger.info(f"Chart for {location_name} saved to {filepath}")
+        return filepath
 
     except Exception as e:
         logger.error(f"Failed to generate chart for {location_name}: {e}", exc_info=True)
@@ -618,36 +602,41 @@ def build_html_email():
     cal_values = compute_daily_data(cal_history, cal_pm25_today)
     bin_values = compute_daily_data(bin_history, bin_pm25_today)
     
+    # Store file paths for attachment
+    chart_files = []
+    
     if cal_values and bin_values:
         logger.info(f"Calamba: {len(cal_values)} days, Biñan: {len(bin_values)} days")
         
         # Generate Calamba chart
-        cal_chart_base64 = build_bar_chart_plotly("Calamba, Laguna", cal_values)
+        cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_values)
         
         # Generate Binan chart
-        bin_chart_base64 = build_bar_chart_plotly("Biñan, Laguna", bin_values)
+        bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_values)
         
-        # Add both charts to email
-        if cal_chart_base64:
+        # Add references to charts in HTML (using cid for embedded images)
+        if cal_chart_path:
             html_content += f"""
             <div class="divider"></div>
             <div class="trend-section">
                 <p class="trend-title">📊 Calamba - 30-Day AQI History</p>
                 <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="data:image/png;base64,{cal_chart_base64}" alt="Calamba 30-day AQI bar chart" class="trend-img" />
+                <img src="cid:calamba_chart" alt="Calamba 30-day AQI bar chart" class="trend-img" />
             </div>
             """
+            chart_files.append(("calamba_chart", cal_chart_path))
         else:
             logger.warning("Failed to generate Calamba chart")
         
-        if bin_chart_base64:
+        if bin_chart_path:
             html_content += f"""
             <div class="trend-section">
                 <p class="trend-title">📊 Biñan - 30-Day AQI History</p>
                 <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="data:image/png;base64,{bin_chart_base64}" alt="Biñan 30-day AQI bar chart" class="trend-img" />
+                <img src="cid:binan_chart" alt="Biñan 30-day AQI bar chart" class="trend-img" />
             </div>
             """
+            chart_files.append(("binan_chart", bin_chart_path))
         else:
             logger.warning("Failed to generate Biñan chart")
     else:
@@ -706,19 +695,38 @@ def build_html_email():
     </body>
     </html>
     """
-    return html_content
+    return html_content, chart_files
 
 # =========================
 # SEND EMAIL
 # =========================
 def send_email():
     try:
-        html_email = build_html_email()
-        msg = MIMEMultipart("alternative")
+        html_email, chart_files = build_html_email()
+        msg = MIMEMultipart("related")
+        msg_alternative = MIMEMultipart("alternative")
+        msg.attach(msg_alternative)
+        
         msg["Subject"] = "🌍 Weekly AQI & Weather Report (Laguna)"
         msg["From"] = SENDER
         msg["To"] = ", ".join(RECEIVERS)
-        msg.attach(MIMEText(html_email, "html"))
+        
+        msg_alternative.attach(MIMEText(html_email, "html"))
+        
+        # Attach chart images
+        for chart_id, chart_path in chart_files:
+            try:
+                with open(chart_path, "rb") as attachment:
+                    part = MIMEBase("application", "octet-stream")
+                    part.set_payload(attachment.read())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"inline; filename= {chart_id}.png")
+                part.add_header("Content-ID", f"<{chart_id}>")
+                msg.attach(part)
+                logger.info(f"Attached chart: {chart_id}")
+            except Exception as e:
+                logger.error(f"Failed to attach chart {chart_id}: {e}")
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SENDER, PASSWORD)
             server.sendmail(SENDER, RECEIVERS, msg.as_string())
