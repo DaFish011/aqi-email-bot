@@ -15,8 +15,19 @@ from requests.exceptions import RequestException
 # =========================
 # LOGGING
 # =========================
-logging.basicConfig(level=logging.INFO)
+log_file = os.path.expanduser("~/aqi_bot.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
+logger.info("="*50)
+logger.info("AQI Bot Started")
+logger.info("="*50)
 
 # =========================
 # ENV VARIABLES
@@ -381,15 +392,31 @@ def build_bar_chart_url_single(location_name, values):
         return None
     
     try:
+        logger.info(f"Building chart for {location_name} with {len(values)} data points")
+        
         # Calculate y-axis max with 15% buffer
         all_valid = [v for v in values if v is not None]
+        logger.info(f"Valid values for {location_name}: {len(all_valid)}")
+        
         max_y = max(all_valid) if all_valid else 100
         y_max = max_y + math.ceil(max_y * 0.15)
+        logger.info(f"{location_name} - Max Y: {max_y}, Y-Axis Max: {y_max}")
 
         # Create day labels (1-30)
         days = [str(i) for i in range(1, len(values) + 1)]
+        logger.info(f"{location_name} - Days: {len(days)}")
 
-        # Create chart config
+        # Create colors list
+        colors = []
+        for v in values:
+            if v is not None:
+                color = aqi_map[get_aqi_level(v)]["color"]
+            else:
+                color = "#ccc"
+            colors.append(color)
+        logger.info(f"{location_name} - Colors generated: {len(colors)}")
+
+        # Create chart config - SIMPLIFIED
         chart_config = {
             "type": "bar",
             "data": {
@@ -398,81 +425,48 @@ def build_bar_chart_url_single(location_name, values):
                     {
                         "label": location_name,
                         "data": values,
-                        "backgroundColor": [aqi_map[get_aqi_level(v)]["color"] if v else "#ccc" for v in values],
-                        "borderWidth": 0,
-                        "borderRadius": 3,
-                        "borderSkipped": False
+                        "backgroundColor": colors,
+                        "borderWidth": 0
                     }
                 ]
             },
             "options": {
                 "responsive": True,
                 "maintainAspectRatio": False,
-                "interaction": {"mode": "index", "intersect": False},
-                "plugins": {
-                    "legend": {"display": False},
-                    "datalabels": {
-                        "anchor": "end",
-                        "align": "end",
-                        "offset": 0,
-                        "rotation": -45,
-                        "font": {"size": 11, "weight": "bold"},
-                        "color": "#dc2626",
-                        "display": [v > 100 for v in values]
-                    },
-                    "tooltip": {
-                        "backgroundColor": "rgba(0,0,0,0.85)",
-                        "padding": 10,
-                        "titleFont": {"size": 12, "weight": 600},
-                        "bodyFont": {"size": 11},
-                        "cornerRadius": 6,
-                        "displayColors": False
-                    }
-                },
                 "scales": {
                     "x": {
-                        "grid": {"display": False, "drawBorder": False},
-                        "ticks": {
-                            "color": "#666",
-                            "font": {"size": 10},
-                            "maxRotation": 0,
-                            "callback": {
-                                "6": "Day 7",
-                                "13": "Day 14",
-                                "20": "Day 21",
-                                "27": "Day 28"
-                            }
-                        }
+                        "grid": {"display": False}
                     },
                     "y": {
                         "min": 0,
-                        "max": y_max,
-                        "grid": {"color": "rgba(0,0,0,0.07)", "drawBorder": False, "drawTicks": False},
-                        "ticks": {
-                            "color": "#666",
-                            "font": {"size": 10},
-                            "stepSize": max(10, math.ceil(y_max / 5 / 10) * 10),
-                            "padding": 8
-                        }
+                        "max": y_max
                     }
                 }
             }
         }
 
+        logger.info(f"{location_name} - Chart config created")
+
         # Encode and generate URL
-        encoded = urllib.parse.quote(json.dumps(chart_config))
+        json_str = json.dumps(chart_config)
+        logger.info(f"{location_name} - JSON size before encoding: {len(json_str)} chars")
+        
+        encoded = urllib.parse.quote(json_str)
+        logger.info(f"{location_name} - JSON size after encoding: {len(encoded)} chars")
+        
         chart_url = f"https://quickchart.io/chart?w=860&h=320&c={encoded}"
 
         url_length = len(chart_url)
-        logger.info(f"Chart URL for {location_name} generated ({url_length} chars)")
+        logger.info(f"Chart URL for {location_name} generated ({url_length} chars, limit: 2000)")
         
         if url_length > 2000:
-            logger.error(f"Chart URL for {location_name} exceeds limit ({url_length} chars)")
+            logger.error(f"Chart URL for {location_name} EXCEEDS LIMIT ({url_length} chars)")
             return None
         
+        logger.info(f"Chart URL for {location_name} is VALID and will be included")
         return chart_url
     except Exception as e:
-        logger.error(f"Failed to generate chart URL for {location_name}: {e}")
+        logger.error(f"Failed to generate chart URL for {location_name}: {e}", exc_info=True)
         return None
 
 # =========================
