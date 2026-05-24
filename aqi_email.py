@@ -56,14 +56,14 @@ TAAL_LON = 121.0064
 PH_OFFSET = timedelta(hours=8)
 
 # =========================
-# AQI LABELS & COLORS
+# AQI LABELS & COLORS (LIGHTER/SOFTER)
 # =========================
 aqi_map = {
-    1: {"label": "Good", "color": "#43a047", "advice": "Air quality is satisfactory."},
-    2: {"label": "Fair", "color": "#fbc02d", "advice": "Air quality is acceptable."},
-    3: {"label": "Moderate", "color": "#fb8c00", "advice": "Sensitive groups should limit outdoor activity."},
-    4: {"label": "Poor", "color": "#e53935", "advice": "Everyone should reduce prolonged outdoor activity."},
-    5: {"label": "Very Poor", "color": "#6a1b9a", "advice": "Avoid outdoor activity. Wear N95 masks if necessary."}
+    1: {"label": "Good", "color": "#66bb6a", "advice": "Air quality is satisfactory."},
+    2: {"label": "Fair", "color": "#fdd835", "advice": "Air quality is acceptable."},
+    3: {"label": "Moderate", "color": "#ffb74d", "advice": "Sensitive groups should limit outdoor activity."},
+    4: {"label": "Poor", "color": "#ef5350", "advice": "Everyone should reduce prolonged outdoor activity."},
+    5: {"label": "Very Poor", "color": "#ab47bc", "advice": "Avoid outdoor activity. Wear N95 masks if necessary."}
 }
 
 # =========================
@@ -387,7 +387,7 @@ def build_bar_chart_plotly(location_name, values):
             ),
             text=text_labels,
             textposition="outside",
-            textfont=dict(size=10, color="#dc2626", family="Arial Black"),
+            textfont=dict(size=10, color="#d32f2f", family="Arial Black"),
             hovertemplate="<b>Day %{x}</b><br>AQI: %{y}<extra></extra>",
             showlegend=False
         ))
@@ -395,39 +395,48 @@ def build_bar_chart_plotly(location_name, values):
         # Add threshold line at 100
         fig.add_hline(
             y=100,
-            line=dict(color="rgba(220,38,38,0.3)", width=2, dash="dash"),
-            annotation_text="AQI Threshold (100)",
+            line=dict(color="rgba(211, 47, 47, 0.2)", width=2, dash="dash"),
+            annotation_text="Threshold",
             annotation_position="right",
-            annotation_font=dict(size=10, color="rgba(220,38,38,0.6)")
+            annotation_font=dict(size=9, color="rgba(211, 47, 47, 0.5)")
         )
 
-        # Update layout
+        # Get today's date for display on left
+        today = datetime.utcnow() + PH_OFFSET
+        today_str = today.strftime("%a, %b %d")
+
+        # Update layout - DATE ON LEFT, Y-AXIS ON RIGHT
         fig.update_layout(
             title=dict(
-                text=f"<b>{location_name} - 30-Day AQI History</b>",
-                font=dict(size=16, color="#333"),
-                x=0.5,
-                xanchor="center"
+                text=f"<b>{location_name}</b><br><span style='font-size:12px; color:#999'>{today_str}</span>",
+                font=dict(size=14, color="#333"),
+                x=0.0,
+                xanchor="left",
+                y=0.98,
+                yanchor="top"
             ),
             xaxis=dict(
-                title="Day",
+                title=None,
                 ticktext=date_labels,
                 tickvals=day_numbers,
-                tickfont=dict(size=10),
-                gridcolor="rgba(0,0,0,0.05)",
-                showgrid=False,
-                zeroline=False
+                tickfont=dict(size=9, color="#999"),
+                gridcolor="rgba(0,0,0,0.03)",
+                showgrid=True,
+                zeroline=False,
+                side="bottom"
             ),
             yaxis=dict(
-                title="Air Quality Index (AQI)",
+                title=None,
                 range=[0, y_max],
-                gridcolor="rgba(0,0,0,0.07)",
+                gridcolor="rgba(0,0,0,0.05)",
                 zeroline=False,
-                tickfont=dict(size=10)
+                tickfont=dict(size=9, color="#999"),
+                side="right",
+                dtick=20  # Show y-axis in increments of 20
             ),
-            plot_bgcolor="white",
+            plot_bgcolor="rgba(250,250,250,0.5)",
             paper_bgcolor="white",
-            margin=dict(l=60, r=60, t=80, b=60),
+            margin=dict(l=40, r=60, t=80, b=40),
             width=860,
             height=320,
             showlegend=False,
