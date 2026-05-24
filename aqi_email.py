@@ -149,16 +149,71 @@ def get_weather_data(lat, lon):
         return None
 
 # =========================
-# WIND DIRECTION
+# WIND DIRECTION & SPEED DESCRIPTION
 # =========================
-def get_wind_direction(deg):
-    if deg is None or deg == "-":
-        return "-"
+def get_wind_description(wind_speed):
+    """Get description based on wind speed (m/s)"""
+    if wind_speed is None or wind_speed == "-":
+        return "Calm conditions"
     try:
-        directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-        return directions[int((float(deg) + 22.5) / 45) % 8]
+        speed = float(wind_speed)
+        if speed < 1:
+            return "Calm breeze"
+        elif speed < 3:
+            return "Light breeze"
+        elif speed < 5:
+            return "Gentle breeze"
+        elif speed < 8:
+            return "Moderate breeze"
+        elif speed < 11:
+            return "Fresh breeze"
+        else:
+            return "Strong wind"
     except (ValueError, TypeError):
-        return "-"
+        return "Variable breeze"
+
+def get_compass_direction(wind_deg):
+    """Convert wind degree to compass direction (16-point)"""
+    if wind_deg is None or wind_deg == "-":
+        return None
+    try:
+        degree = float(wind_deg)
+        directions = ["North", "NNE", "Northeast", "ENE", "East", "ESE", "Southeast", "SSE",
+                      "South", "SSW", "Southwest", "WSW", "West", "WNW", "Northwest", "NNW"]
+        index = round(degree / 22.5) % 16
+        return directions[index]
+    except (ValueError, TypeError):
+        return None
+
+def generate_wind_message(wind_deg, bearing_to_taal, wind_speed):
+    """
+    Generate clear wind direction message.
+    bearing_to_taal: compass direction FROM location TO Taal
+    """
+    wind_desc = get_wind_description(wind_speed)
+    compass_dir = get_compass_direction(wind_deg)
+    
+    if wind_deg is None or bearing_to_taal is None:
+        return f"💨 {wind_desc}"
+    
+    try:
+        wind_deg_float = float(wind_deg)
+        # Check if wind is blowing towards Taal (within 90 degrees of bearing)
+        diff = abs(wind_deg_float - bearing_to_taal)
+        if diff > 180:
+            diff = 360 - diff
+        
+        if diff < 90:
+            # Wind is blowing FROM location TOWARDS Taal
+            return f"💨 Wind blowing from Calamba towards Taal ({wind_desc}, {wind_speed} m/s)"
+        else:
+            # Wind is blowing AWAY FROM Taal towards compass direction
+            if compass_dir:
+                return f"💨 Wind blowing away from Taal towards the {compass_dir} ({wind_desc}, {wind_speed} m/s)"
+            else:
+                return f"💨 {wind_desc} ({wind_speed} m/s)"
+    except (ValueError, TypeError):
+        return f"💨 {wind_desc}"
 
 # =========================
 # BEARING CALCULATION (FOR TAAL)
@@ -540,12 +595,7 @@ def build_html_email():
         no2 = aqi_data.get("no2", "-")
         o3 = aqi_data.get("o3", "-")
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
-        wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
-        
-        if wind_towards_taal:
-            wind_message = f"🌋 Wind is blowing <strong>away from Taal</strong> (low volcanic impact expected)"
-        else:
-            wind_message = f"🌋 Wind is blowing <strong>towards you from Taal</strong> (could carry volcanic emissions)"
+        wind_message = generate_wind_message(wind_deg, bearing_to_taal, wind_speed)
         
         is_alert = aqi_level >= 4
         alert_class = "alert-card" if is_alert else ""
