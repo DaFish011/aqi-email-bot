@@ -364,116 +364,80 @@ def compute_daily_data(history_list, current_pm25):
     return values
 
 # =========================
-# BUILD BAR CHART URL
+# BUILD BAR CHART URL (SIMPLIFIED & RELIABLE)
 # =========================
 def build_bar_chart_url(cal_values, bin_values):
     """
-    Build a bar chart showing 30-day AQI history with:
-    - Color-coded bars by AQI level (1-5)
-    - AQI values displayed above bars for values > 100
-    - Light threshold line at 100
-    - Auto-scaled y-axis
+    Build a simple bar chart showing 30-day AQI history.
+    Uses a basic config that's reliable and doesn't exceed URL limits.
     """
     
-    # Calculate y-axis max with 15% buffer
-    all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
-    max_y = max(all_valid) if all_valid else 100
-    y_max = max_y + math.ceil(max_y * 0.15)
+    if not cal_values or not bin_values:
+        logger.warning("No values provided for chart")
+        return None
+    
+    try:
+        # Limit to last 14 days if data is too much
+        if len(cal_values) > 14:
+            cal_values = cal_values[-14:]
+            bin_values = bin_values[-14:]
+        
+        # Calculate y-axis max
+        all_valid = [v for v in cal_values + bin_values if v is not None]
+        max_y = max(all_valid) if all_valid else 100
+        y_max = max_y + math.ceil(max_y * 0.15)
+        y_max = min(y_max, 300)  # Cap at 300
 
-    # Chart config for both Calamba and Biñan
-    chart_config = {
-        "type": "bar",
-        "data": {
-            "labels": [str(i) for i in range(1, 31)],
-            "datasets": [
-                {
-                    "label": "Calamba AQI",
-                    "data": cal_values or [],
-                    "backgroundColor": [aqi_map[get_aqi_level(v)]["color"] for v in (cal_values or [])],
-                    "borderWidth": 0,
-                    "borderRadius": 3,
-                    "borderSkipped": False
-                },
-                {
-                    "label": "Biñan AQI",
-                    "data": bin_values or [],
-                    "backgroundColor": [aqi_map[get_aqi_level(v)]["color"] for v in (bin_values or [])],
-                    "borderWidth": 0,
-                    "borderRadius": 3,
-                    "borderSkipped": False
-                }
-            ]
-        },
-        "options": {
-            "responsive": True,
-            "maintainAspectRatio": False,
-            "interaction": {"mode": "index", "intersect": False},
-            "plugins": {
-                "legend": {"display": False},
-                "datalabels": {
-                    "anchor": "end",
-                    "align": "end",
-                    "offset": 0,
-                    "rotation": -45,
-                    "font": {"size": 11, "weight": "bold"},
-                    "color": "#dc2626",
-                    "display": {
-                        "0": [v > 100 for v in (cal_values or [])],
-                        "1": [v > 100 for v in (bin_values or [])]
-                    }
-                },
-                "tooltip": {
-                    "backgroundColor": "rgba(0,0,0,0.85)",
-                    "padding": 10,
-                    "titleFont": {"size": 12, "weight": 600},
-                    "bodyFont": {"size": 11},
-                    "cornerRadius": 6,
-                    "displayColors": False
-                }
-            },
-            "scales": {
-                "x": {
-                    "grid": {"display": False, "drawBorder": False},
-                    "ticks": {
-                        "color": "#666",
-                        "font": {"size": 10},
-                        "maxRotation": 0,
-                        "callback": {
-                            "index": [6, 13, 20, 27],
-                            "labels": ["Day 7", "Day 14", "Day 21", "Day 28"]
-                        }
-                    }
-                },
-                "y": {
-                    "min": 0,
-                    "max": y_max,
-                    "grid": {
-                        "color": "rgba(0,0,0,0.07)",
-                        "drawBorder": False,
-                        "drawTicks": False
+        # Simple chart config
+        chart_config = {
+            "type": "bar",
+            "data": {
+                "labels": [str(i+1) for i in range(len(cal_values))],
+                "datasets": [
+                    {
+                        "label": "Calamba",
+                        "data": cal_values,
+                        "backgroundColor": [aqi_map[get_aqi_level(v)]["color"] if v else "#ccc" for v in cal_values],
+                        "borderWidth": 0
                     },
-                    "ticks": {
-                        "color": "#666",
-                        "font": {"size": 10},
-                        "stepSize": max(10, math.ceil(y_max / 5 / 10) * 10),
-                        "padding": 8
+                    {
+                        "label": "Biñan",
+                        "data": bin_values,
+                        "backgroundColor": [aqi_map[get_aqi_level(v)]["color"] if v else "#ccc" for v in bin_values],
+                        "borderWidth": 0
+                    }
+                ]
+            },
+            "options": {
+                "responsive": True,
+                "maintainAspectRatio": False,
+                "plugins": {
+                    "legend": {"display": True}
+                },
+                "scales": {
+                    "y": {
+                        "min": 0,
+                        "max": y_max,
+                        "grid": {"color": "rgba(0,0,0,0.05)"}
                     }
                 }
             }
         }
-    }
 
-    encoded = urllib.parse.quote(json.dumps(chart_config))
-    chart_url = f"https://quickchart.io/chart?w=860&h=300&c={encoded}"
-
-    url_length = len(chart_url)
-    logger.info(f"Bar chart URL generated ({url_length} chars, limit: 2000)")
-    
-    if url_length > 2000:
-        logger.error(f"Chart URL exceeds limit ({url_length} chars).")
+        encoded = urllib.parse.quote(json.dumps(chart_config))
+        chart_url = f"https://quickchart.io/chart?w=800&h=300&c={encoded}"
+        
+        url_length = len(chart_url)
+        logger.info(f"Chart URL generated ({url_length} chars)")
+        
+        if url_length > 2000:
+            logger.warning(f"Chart URL too long ({url_length} chars)")
+            return None
+        
+        return chart_url
+    except Exception as e:
+        logger.error(f"Failed to generate chart URL: {e}")
         return None
-    
-    return chart_url
 
 # =========================
 # BUILD HTML EMAIL
@@ -523,7 +487,7 @@ def build_html_email():
             .trend-section { margin: 20px; padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
             .trend-title { font-size: 16px; font-weight: bold; color: #333; margin: 0 0 4px 0; }
             .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 15px 0; }
-            .trend-img { width: 100%; max-width: 860px; border-radius: 6px; border: 1px solid #e0e0e0; display: block; background-color: #fafafa; }
+            .trend-img { width: 100%; max-width: 800px; border-radius: 6px; border: 1px solid #e0e0e0; display: block; background-color: #fafafa; }
         </style>
     </head>
     <body>
@@ -560,9 +524,6 @@ def build_html_email():
         wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
         
         # User-friendly wind direction messaging
-        # Since Calamba/Binan are SW of Taal, the logic is inverted:
-        # Wind TOWARDS Taal = wind blowing away from your location (safe)
-        # Wind AWAY FROM Taal = wind blowing from Taal towards you (volcanic air coming in)
         if wind_towards_taal:
             wind_message = f"🌋 Wind is blowing <strong>away from Taal</strong> (low volcanic impact expected)"
         else:
@@ -636,21 +597,23 @@ def build_html_email():
     cal_values = compute_daily_data(cal_history, cal_pm25_today)
     bin_values = compute_daily_data(bin_history, bin_pm25_today)
     
-    if cal_values or bin_values:
+    if cal_values and bin_values:
+        logger.info(f"Calamba values: {len(cal_values)} days, Biñan values: {len(bin_values)} days")
         chart_url = build_bar_chart_url(cal_values, bin_values)
         if chart_url:
             html_content += f"""
             <div class="divider"></div>
             <div class="trend-section">
                 <p class="trend-title">📊 30-Day AQI History</p>
-                <p class="trend-subtitle">Daily AQI readings for Calamba and Biñan · Color-coded by severity level</p>
+                <p class="trend-subtitle">Daily AQI readings for Calamba and Biñan</p>
                 <img src="{chart_url}" alt="30-day AQI bar chart" class="trend-img" />
             </div>
             """
+            logger.info("Chart section added to email")
         else:
-            logger.warning("Chart URL generation failed.")
+            logger.warning("Chart URL generation failed - skipping chart section")
     else:
-        logger.warning("No AQI history data for chart.")
+        logger.warning("No AQI history data for chart")
     
     # =========================
     # AIR QUALITY NEWS SECTION
