@@ -48,8 +48,8 @@ RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba, Laguna", "lat": 14.2117, "lon": 121.1653},
-    {"name": "Biñan, Laguna", "lat": 14.3386, "lon": 121.0807},
+    {"name": "Calamba, Laguna", "lat": 14.193548, "lon": 121.072677},
+    {"name": "Biñan, Laguna", "lat": 14.277027, "lon": 121.058521},
 ]
 TAAL_LAT = 14.3568
 TAAL_LON = 121.0064
@@ -805,4 +805,4 @@ def send_email():
 # MAIN
 # =========================
 if __name__ == "__main__":
-    send_email()    
+    send_email()
