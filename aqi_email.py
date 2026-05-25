@@ -364,6 +364,12 @@ def get_aqi_history(lat, lon, days=30):
         return []
 
 def compute_daily_data(history_list, current_pm25):
+    """
+    Past days  → daily average AQI (EPA formula from PM2.5).
+    Today      → live current AQI value passed in as current_pm25.
+    Skips today's readings from history to avoid mixing live + historical.
+    Returns: (labels, values) tuples
+    """
     today_key = (datetime.utcnow() + PH_OFFSET).strftime("%Y-%m-%d")
     daily = {}
     for entry in history_list:
@@ -371,18 +377,22 @@ def compute_daily_data(history_list, current_pm25):
         dt_ph = dt_utc + PH_OFFSET
         day_key = dt_ph.strftime("%Y-%m-%d")
         if day_key == today_key:
-            continue
+            continue  # today handled separately via live API
         pm2_5 = entry.get("components", {}).get("pm2_5") or 0
         aqi_val = pm25_to_aqi(pm2_5)
         if day_key not in daily:
             daily[day_key] = {"label": dt_ph.strftime("%b %d"), "readings": []}
         daily[day_key]["readings"].append(aqi_val)
     sorted_keys = sorted(daily.keys())
+    labels = [daily[k]["label"] for k in sorted_keys]
     values = [round(sum(daily[k]["readings"]) / len(daily[k]["readings"])) for k in sorted_keys]
+    # Append today's live value
     if current_pm25 is not None:
         today_aqi = pm25_to_aqi(current_pm25)
+        today_label = (datetime.utcnow() + PH_OFFSET).strftime("%b %d")
+        labels.append(today_label)
         values.append(today_aqi)
-    return values
+    return labels, values
 
 # =========================
 # BUILD BAR CHART WITH PLOTLY (SAVED AS FILE)
@@ -662,8 +672,8 @@ def build_html_email():
     bin_history = get_aqi_history(bin_["lat"], bin_["lon"])
     cal_pm25_today = cal_aqi_now.get("pm2_5") if cal_aqi_now else None
     bin_pm25_today = bin_aqi_now.get("pm2_5") if bin_aqi_now else None
-    cal_values = compute_daily_data(cal_history, cal_pm25_today)
-    bin_values = compute_daily_data(bin_history, bin_pm25_today)
+    cal_labels, cal_values = compute_daily_data(cal_history, cal_pm25_today)
+    bin_labels, bin_values = compute_daily_data(bin_history, bin_pm25_today)
     
     # Store file paths for attachment
     chart_files = []
