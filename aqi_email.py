@@ -48,8 +48,8 @@ RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba, Laguna", "lat": 14.193548, "lon": 121.072677},
-    {"name": "Biñan, Laguna", "lat": 14.277027, "lon": 121.058521},
+    {"name": "Calamba, Laguna", "lat": 14.1919, "lon": 121.0711},
+    {"name": "Biñan, Laguna", "lat": 14.2769, "lon": 121.0589},
 ]
 TAAL_LAT = 14.3568
 TAAL_LON = 121.0064
