@@ -751,6 +751,7 @@ def build_html_email():
         """
     html_content += """
             <div class="footer">
+                <p>ℹ️ <strong>Methodology:</strong> Air quality data sourced from OpenWeatherMap Air Pollution API using the SILAM atmospheric composition model (Finnish Meteorological Institute). Ground-truth measurements may vary from these estimates.</p>
                 <p>Data sources: OpenWeatherMap API, Open-Meteo API, NewsAPI</p>
                 <p>This is an automated report. Please do not reply to this email.</p>
             </div>
