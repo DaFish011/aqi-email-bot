@@ -2,34 +2,22 @@ import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
 import os
 import logging
 import math
 import time
 import json
 import html
+import urllib.parse
+import sqlite3
 from datetime import datetime, timedelta
 from requests.exceptions import RequestException
-import plotly.graph_objects as go
 
 # =========================
 # LOGGING
 # =========================
-log_file = os.path.expanduser("~/aqi_bot.log")
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.info("="*50)
-logger.info("AQI Bot Started")
-logger.info("="*50)
 
 # =========================
 # ENV VARIABLES
@@ -45,6 +33,11 @@ if not all([API_KEY, SENDER, PASSWORD, RECEIVERS_STR]):
 RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 
 # =========================
+# DATABASE
+# =========================
+DB_PATH = "aqi_history.db"
+
+# =========================
 # LOCATIONS
 # =========================
 locations = [
@@ -56,7 +49,7 @@ TAAL_LON = 121.0064
 PH_OFFSET = timedelta(hours=8)
 
 # =========================
-# AQI LABELS & COLORS (ORIGINAL BOLD COLORS)
+# AQI LABELS & COLORS
 # =========================
 aqi_map = {
     1: {"label": "Good", "color": "#43a047", "advice": "Air quality is satisfactory."},
@@ -85,18 +78,6 @@ def pm25_to_aqi(pm25):
         if c_low <= pm25 <= c_high:
             return round(((aqi_high - aqi_low) / (c_high - c_low)) * (pm25 - c_low) + aqi_low)
     return 500
-
-def get_aqi_level(aqi_value):
-    if aqi_value <= 50:
-        return 1
-    elif aqi_value <= 100:
-        return 2
-    elif aqi_value <= 150:
-        return 3
-    elif aqi_value <= 200:
-        return 4
-    else:
-        return 5
 
 # =========================
 # AQI FUNCTION (OPENWEATHER)
@@ -149,71 +130,16 @@ def get_weather_data(lat, lon):
         return None
 
 # =========================
-# WIND DIRECTION & SPEED DESCRIPTION
+# WIND DIRECTION
 # =========================
-def get_wind_description(wind_speed):
-    """Get description based on wind speed (m/s)"""
-    if wind_speed is None or wind_speed == "-":
-        return "Calm conditions"
+def get_wind_direction(deg):
+    if deg is None or deg == "-":
+        return "-"
     try:
-        speed = float(wind_speed)
-        if speed < 1:
-            return "Calm breeze"
-        elif speed < 3:
-            return "Light breeze"
-        elif speed < 5:
-            return "Gentle breeze"
-        elif speed < 8:
-            return "Moderate breeze"
-        elif speed < 11:
-            return "Fresh breeze"
-        else:
-            return "Strong wind"
+        directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        return directions[int((float(deg) + 22.5) / 45) % 8]
     except (ValueError, TypeError):
-        return "Variable breeze"
-
-def get_compass_direction(wind_deg):
-    """Convert wind degree to compass direction (16-point)"""
-    if wind_deg is None or wind_deg == "-":
-        return None
-    try:
-        degree = float(wind_deg)
-        directions = ["North", "NNE", "Northeast", "ENE", "East", "ESE", "Southeast", "SSE",
-                      "South", "SSW", "Southwest", "WSW", "West", "WNW", "Northwest", "NNW"]
-        index = round(degree / 22.5) % 16
-        return directions[index]
-    except (ValueError, TypeError):
-        return None
-
-def generate_wind_message(wind_deg, bearing_to_taal, wind_speed):
-    """
-    Generate clear wind direction message.
-    bearing_to_taal: compass direction FROM location TO Taal
-    """
-    wind_desc = get_wind_description(wind_speed)
-    compass_dir = get_compass_direction(wind_deg)
-    
-    if wind_deg is None or bearing_to_taal is None:
-        return f"💨 {wind_desc}"
-    
-    try:
-        wind_deg_float = float(wind_deg)
-        # Check if wind is blowing towards Taal (within 90 degrees of bearing)
-        diff = abs(wind_deg_float - bearing_to_taal)
-        if diff > 180:
-            diff = 360 - diff
-        
-        if diff < 90:
-            # Wind is blowing FROM location TOWARDS Taal
-            return f"💨 Wind blowing from Calamba towards Taal ({wind_desc}, {wind_speed} m/s)"
-        else:
-            # Wind is blowing AWAY FROM Taal towards compass direction
-            if compass_dir:
-                return f"💨 Wind blowing away from Taal towards the {compass_dir} ({wind_desc}, {wind_speed} m/s)"
-            else:
-                return f"💨 {wind_desc} ({wind_speed} m/s)"
-    except (ValueError, TypeError):
-        return f"💨 {wind_desc}"
+        return "-"
 
 # =========================
 # BEARING CALCULATION (FOR TAAL)
@@ -225,6 +151,11 @@ def get_bearing(lat1, lon1, lat2, lon2):
     y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     bearing = math.degrees(math.atan2(x, y))
     return (bearing + 360) % 360
+
+def bearing_to_direction(bearing):
+    directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    return directions[round(bearing / 22.5) % 16]
 
 def is_wind_towards_taal(wind_deg, bearing_to_taal):
     diff = abs(wind_deg - bearing_to_taal)
@@ -247,14 +178,17 @@ NEWS_SEARCH_QUERIES = [
     '(Laguna OR Calamba OR Biñan) AND (wildfire OR "forest fire" OR smoke OR "open burning")',
 ]
 
+
 def _article_text(article):
     title = article.get("title") or ""
     desc = article.get("description") or ""
     return f"{title} {desc}".lower()
 
+
 def _should_exclude_article(article):
     text = _article_text(article)
     return any(kw in text for kw in NEWS_EXCLUDE_KEYWORDS)
+
 
 def _is_within_week(article_date_str):
     try:
@@ -266,6 +200,7 @@ def _is_within_week(article_date_str):
     except (ValueError, TypeError):
         logger.warning(f"Could not parse article date: {article_date_str}")
         return False
+
 
 def _score_and_tag_article(article):
     text = _article_text(article)
@@ -289,6 +224,7 @@ def _score_and_tag_article(article):
         tags.append("📍 Laguna / Calamba / Biñan")
 
     return score, tags
+
 
 def get_air_quality_news(max_articles=6):
     if not NEWS_API_KEY:
@@ -334,6 +270,7 @@ def get_air_quality_news(max_articles=6):
     scored.sort(key=lambda a: a["_news_score"], reverse=True)
     return scored[:max_articles]
 
+
 def _has_elevated_aqi(fetched_aqi):
     for data in fetched_aqi.values():
         if not data:
@@ -346,182 +283,226 @@ def _has_elevated_aqi(fetched_aqi):
     return False
 
 # =========================
-# AQI HISTORY (OPENWEATHER)
+# AQI HISTORY (FROM DATABASE)
 # =========================
-def get_aqi_history(lat, lon, days=30):
-    end = int(time.time())
-    start = int((datetime.utcnow() - timedelta(days=days)).timestamp())
+def get_aqi_history_from_db(location_name):
+    """Fetch AQI history from SQLite for a location"""
     try:
-        url = (
-            f"https://api.openweathermap.org/data/2.5/air_pollution/history"
-            f"?lat={lat}&lon={lon}&start={start}&end={end}&appid={API_KEY}"
-        )
-        response = requests.get(url, timeout=15)
-        response.raise_for_status()
-        return response.json().get("list", [])
-    except RequestException as e:
-        logger.error(f"Failed to fetch AQI history: {e}")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT date, pm2_5, aqi FROM aqi_readings 
+            WHERE location = ?
+            ORDER BY date ASC
+        """, (location_name,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        history_list = []
+        for date_str, pm2_5, aqi in rows:
+            history_list.append({
+                "date": date_str,
+                "pm2_5": pm2_5,
+                "aqi": aqi
+            })
+        
+        logger.info(f"Loaded {len(history_list)} records for {location_name} from database")
+        return history_list
+    except Exception as e:
+        logger.error(f"Failed to fetch AQI history from database for {location_name}: {e}")
         return []
 
 def compute_daily_data(history_list, current_pm25):
     """
-    Past days  → daily average AQI (EPA formula from PM2.5).
+    Past days  → use AQI from database.
     Today      → live current AQI value passed in as current_pm25.
-    Skips today's readings from history to avoid mixing live + historical.
-    Returns: (labels, values) tuples
+    Uses data from database (history_list contains {date, pm2_5, aqi})
     """
     today_key = (datetime.utcnow() + PH_OFFSET).strftime("%Y-%m-%d")
-    daily = {}
+    labels = []
+    values = []
+    
     for entry in history_list:
-        dt_utc = datetime.utcfromtimestamp(entry["dt"])
-        dt_ph = dt_utc + PH_OFFSET
-        day_key = dt_ph.strftime("%Y-%m-%d")
-        if day_key == today_key:
-            continue  # today handled separately via live API
-        pm2_5 = entry.get("components", {}).get("pm2_5") or 0
-        aqi_val = pm25_to_aqi(pm2_5)
-        if day_key not in daily:
-            daily[day_key] = {"label": dt_ph.strftime("%b %d"), "readings": []}
-        daily[day_key]["readings"].append(aqi_val)
-    sorted_keys = sorted(daily.keys())
-    labels = [daily[k]["label"] for k in sorted_keys]
-    values = [round(sum(daily[k]["readings"]) / len(daily[k]["readings"])) for k in sorted_keys]
-    # Append today's live value
+        date_str = entry.get("date")
+        if date_str == today_key:
+            continue
+        aqi = entry.get("aqi")
+        
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        label = date_obj.strftime("%b %d")
+        
+        labels.append(label)
+        values.append(aqi)
+    
     if current_pm25 is not None:
         today_aqi = pm25_to_aqi(current_pm25)
         today_label = (datetime.utcnow() + PH_OFFSET).strftime("%b %d")
         labels.append(today_label)
         values.append(today_aqi)
+    
     return labels, values
 
+def merge_labels(cal_labels, cal_values, bin_labels, bin_values):
+    """Align both datasets to a unified sorted x-axis."""
+    all_labels = sorted(
+        set(cal_labels) | set(bin_labels),
+        key=lambda d: datetime.strptime(d, "%b %d").replace(year=datetime.utcnow().year)
+    )
+    cal_map = dict(zip(cal_labels, cal_values))
+    bin_map = dict(zip(bin_labels, bin_values))
+    merged_cal = [cal_map.get(l) for l in all_labels]
+    merged_bin = [bin_map.get(l) for l in all_labels]
+    return all_labels, merged_cal, merged_bin
+
 # =========================
-# BUILD BAR CHART WITH PLOTLY (SAVED AS FILE)
+# BUILD TREND CHART URL
 # =========================
-def build_bar_chart_plotly(location_name, labels, values):
-    """
-    Build a professional bar chart using Plotly and save as PNG file.
-    labels: list of date labels (e.g., ["Apr 25", "Apr 26", ...])
-    values: list of AQI values
-    """
-    
-    if not values or len(values) == 0:
-        logger.warning(f"No values provided for {location_name} chart")
-        return None
-    
-    try:
-        logger.info(f"Building Plotly chart for {location_name}")
-        
-        # Calculate y-axis max with 15% buffer
-        all_valid = [v for v in values if v is not None]
-        max_y = max(all_valid) if all_valid else 100
-        y_max = max_y + math.ceil(max_y * 0.15)
+def build_trend_chart_url(labels, cal_values, bin_values):
+    CAL_COLOR = "#00897b"
+    BIN_COLOR = "#f57c00"
+    ALERT_RED = "#d32f2f"
+    BG_FILL_CAL = "rgba(0,137,123,0.15)"
+    BG_FILL_BIN = "rgba(245,124,0,0.15)"
 
-        # Use provided labels, show only Saturdays
-        date_labels = []
-        day_numbers = list(range(1, len(values) + 1))
-        for label in labels:
-            # Show label only if it's a Saturday (we'll show some dates for clarity)
-            # For now, show every 7th label to avoid crowding
-            idx = labels.index(label)
-            if idx % 7 == 0 or idx == len(labels) - 1:
-                date_labels.append(label)
-            else:
-                date_labels.append("")
-        
-        # Create colors list and text labels
-        colors = []
-        text_labels = []
-        for v in values:
-            if v is not None:
-                color = aqi_map[get_aqi_level(v)]["color"]
-                text = str(int(v)) if v > 100 else ""
-            else:
-                color = "#ccc"
-                text = ""
-            colors.append(color)
-            text_labels.append(text)
+    def point_colors(values, base):
+        return [ALERT_RED if (v is not None and v > 100) else base for v in (values or [])]
 
-        # Create figure with higher quality settings
-        fig = go.Figure()
+    def point_radii(values, is_last=False):
+        radii = [7 if (v is not None and v > 100) else 3 for v in (values or [])]
+        if radii and is_last:
+            radii[-1] = max(radii[-1], 8)
+        return radii
 
-        # Add bar chart
-        fig.add_trace(go.Bar(
-            x=day_numbers,
-            y=values,
-            marker=dict(
-                color=colors,
-                line=dict(width=0)
-            ),
-            text=text_labels,
-            textposition="outside",
-            textfont=dict(size=11, color="#c62828", family="Arial"),
-            hovertemplate="<b>Day %{x}</b><br>AQI: %{y}<extra></extra>",
-            showlegend=False
-        ))
+    all_valid = [v for v in (cal_values or []) + (bin_values or []) if v is not None]
+    max_y = max(max(all_valid) if all_valid else 100, 100) + 40
+    max_y = min(max_y, 320)
 
-        # Add threshold line at 100 (with name for legend)
-        fig.add_hline(
-            y=100,
-            line=dict(color="rgba(211, 47, 47, 0.3)", width=2.5, dash="dash"),
-            name="Threshold (100)"
-        )
+    def dl_colors(values):
+        return [ALERT_RED if (v is not None and v > 100) else "transparent" for v in (values or [])]
 
-        # Update layout - HIGH QUALITY RENDERING
-        fig.update_layout(
-            title=dict(
-                text=f"<b>{location_name} - 30-Day AQI History</b>",
-                font=dict(size=16, color="#333", family="Arial"),
-                x=0.5,
-                xanchor="center"
-            ),
-            xaxis=dict(
-                title=None,
-                ticktext=date_labels,
-                tickvals=day_numbers,
-                tickfont=dict(size=11, color="#666", family="Arial"),
-                gridcolor="rgba(0,0,0,0.05)",
-                showgrid=True,
-                zeroline=False,
-                side="bottom"
-            ),
-            yaxis=dict(
-                title=None,
-                range=[0, y_max],
-                gridcolor="rgba(0,0,0,0.08)",
-                zeroline=False,
-                tickfont=dict(size=11, color="#666", family="Arial"),
-                side="right",
-                dtick=20
-            ),
-            plot_bgcolor="rgba(250,250,250,0.6)",
-            paper_bgcolor="white",
-            margin=dict(l=80, r=80, t=80, b=60),
-            width=1000,
-            height=400,
-            showlegend=True,
-            legend=dict(
-                x=0.02,
-                y=0.55,
-                bgcolor="rgba(255,255,255,0.95)",
-                bordercolor="rgba(0,0,0,0.15)",
-                borderwidth=1,
-                font=dict(size=11)
-            ),
-            hovermode="x unified",
-            font=dict(family="Arial", size=11, color="#333")
-        )
+    def dl_display(values):
+        return [True if (v is not None and v > 100) else False for v in (values or [])]
 
-        # Save to temporary file
-        safe_name = location_name.replace(",", "").replace(" ", "_").lower()
-        filepath = f"/tmp/{safe_name}_chart.png"
-        fig.write_image(filepath)
-        
-        logger.info(f"Chart for {location_name} saved to {filepath}")
-        return filepath
+    chart_config = {
+        "type": "line",
+        "data": {
+            "labels": labels or [],
+            "datasets": [
+                {
+                    "label": "Calamba",
+                    "data": cal_values or [],
+                    "borderColor": CAL_COLOR,
+                    "backgroundColor": BG_FILL_CAL,
+                    "borderWidth": 2,
+                    "fill": True,
+                    "pointBackgroundColor": point_colors(cal_values, CAL_COLOR),
+                    "pointBorderColor": point_colors(cal_values, CAL_COLOR),
+                    "pointRadius": point_radii(cal_values, is_last=True),
+                    "pointHoverRadius": 6,
+                    "tension": 0.3,
+                    "datalabels": {
+                        "color": dl_colors(cal_values),
+                        "display": dl_display(cal_values),
+                        "anchor": "end",
+                        "align": "top",
+                        "offset": 2,
+                        "font": {"size": 10, "weight": "bold"}
+                    }
+                },
+                {
+                    "label": "Biñan",
+                    "data": bin_values or [],
+                    "borderColor": BIN_COLOR,
+                    "backgroundColor": BG_FILL_BIN,
+                    "borderWidth": 2,
+                    "fill": True,
+                    "pointBackgroundColor": point_colors(bin_values, BIN_COLOR),
+                    "pointBorderColor": point_colors(bin_values, BIN_COLOR),
+                    "pointRadius": point_radii(bin_values, is_last=True),
+                    "pointHoverRadius": 6,
+                    "tension": 0.3,
+                    "datalabels": {
+                        "color": dl_colors(bin_values),
+                        "display": dl_display(bin_values),
+                        "anchor": "end",
+                        "align": "top",
+                        "offset": 2,
+                        "font": {"size": 10, "weight": "bold"}
+                    }
+                }
+            ]
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": "Laguna AQI Trends – Last 30 Days",
+                    "color": "#222",
+                    "font": {"size": 16, "weight": "700"},
+                    "padding": {"top": 8, "bottom": 4}
+                },
+                "legend": {
+                    "position": "bottom",
+                    "align": "center",
+                    "labels": {
+                        "usePointStyle": True,
+                        "pointStyleWidth": 12,
+                        "padding": 24,
+                        "color": "#333",
+                        "font": {"size": 13, "weight": "600"}
+                    }
+                },
+                "autocolors": False,
+                "annotation": {
+                    "annotations": [
+                        {
+                            "type": "line",
+                            "mode": "horizontal",
+                            "scaleID": "y",
+                            "value": 100,
+                            "borderColor": ALERT_RED,
+                            "borderDash": [8, 5],
+                            "borderWidth": 2,
+                            "label": {
+                                "enabled": True,
+                                "content": "⚠ Unhealthy (AQI 100)",
+                                "position": "start",
+                                "xAdjust": 10,
+                                "backgroundColor": ALERT_RED,
+                                "color": "#fff",
+                                "font": {"size": 11, "weight": "700"},
+                                "padding": {"x": 8, "y": 4},
+                                "cornerRadius": 4
+                            }
+                        }
+                    ]
+                }
+            },
+            "scales": {
+                "x": {
+                    "ticks": {"color": "#555", "maxRotation": 30, "autoSkip": True},
+                    "grid": {"display": False}
+                },
+                "y": {
+                    "title": {
+                        "display": True,
+                        "text": "Air Quality Index (AQI)",
+                        "color": "#555",
+                        "font": {"size": 12}
+                    },
+                    "grid": {"color": "#f0f0f0"},
+                    "ticks": {"color": "#555"},
+                    "min": 0,
+                    "max": max_y
+                }
+            }
+        }
+    }
 
-    except Exception as e:
-        logger.error(f"Failed to generate chart for {location_name}: {e}", exc_info=True)
-        return None
+    encoded = urllib.parse.quote(json.dumps(chart_config))
+    return f"https://quickchart.io/chart?w=860&h=430&c={encoded}"
 
 # =========================
 # BUILD HTML EMAIL
@@ -599,12 +580,17 @@ def build_html_email():
         temp = weather_data.get("temp", "-") if weather_data else "-"
         wind_speed = weather_data.get("wind_speed", "-") if weather_data else "-"
         wind_deg = weather_data.get("wind_deg") if weather_data else None
+        wind_dir = get_wind_direction(wind_deg)
         pm10 = aqi_data.get("pm10", "-")
         no2 = aqi_data.get("no2", "-")
         o3 = aqi_data.get("o3", "-")
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
-        wind_message = generate_wind_message(wind_deg, bearing_to_taal, wind_speed)
-        wind_compass = get_compass_direction(wind_deg) or "-"
+        wind_towards_taal = is_wind_towards_taal(wind_deg, bearing_to_taal) if wind_deg else False
+        
+        if wind_towards_taal:
+            wind_message = f"🌋 Wind is blowing <strong>away from Taal</strong> (low volcanic impact expected)"
+        else:
+            wind_message = f"🌋 Wind is blowing <strong>towards you from Taal</strong> (could carry volcanic emissions)"
         
         is_alert = aqi_level >= 4
         alert_class = "alert-card" if is_alert else ""
@@ -613,7 +599,7 @@ def build_html_email():
         card_html = f"""
                 <td style="width: 50%; padding: 20px; vertical-align: top;">
                 <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
-                    <div class="location-name">📍 {html.escape(loc['name'])}</div>
+                    <div class="location-name">📍 {loc['name']}</div>
                     {alert_message}
                     <div class="aqi-box" style="background-color: {aqi_info['color']};">
                         <div class="aqi-value">{aqi_level}</div>
@@ -638,7 +624,7 @@ def build_html_email():
                         </td>
                         <td class="weather-cell">
                             <div class="weather-item-label">Direction</div>
-                            <div class="weather-item-value">{wind_compass}</div>
+                            <div class="weather-item-value">{wind_dir}</div>
                         </td>
                     </tr>
                     </table>
@@ -659,64 +645,33 @@ def build_html_email():
             </tr>
             </table>
     """
-    # =========================
-    # 30-DAY BAR CHARTS (ONE FOR EACH LOCATION)
-    # =========================
     logger.info("Fetching 30-day AQI history...")
     cal = locations[0]
     bin_ = locations[1]
     cal_aqi_now = fetched_aqi.get(cal["name"])
     bin_aqi_now = fetched_aqi.get(bin_["name"])
-    cal_history = get_aqi_history(cal["lat"], cal["lon"])
-    bin_history = get_aqi_history(bin_["lat"], bin_["lon"])
+    cal_history = get_aqi_history_from_db(cal["name"])
+    bin_history = get_aqi_history_from_db(bin_["name"])
     cal_pm25_today = cal_aqi_now.get("pm2_5") if cal_aqi_now else None
     bin_pm25_today = bin_aqi_now.get("pm2_5") if bin_aqi_now else None
     cal_labels, cal_values = compute_daily_data(cal_history, cal_pm25_today)
     bin_labels, bin_values = compute_daily_data(bin_history, bin_pm25_today)
-    
-    # Store file paths for attachment
-    chart_files = []
-    
-    if cal_values and bin_values:
-        logger.info(f"Calamba: {len(cal_values)} days, Biñan: {len(bin_values)} days")
-        
-        # Generate Calamba chart
-        cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_labels, cal_values)
-        
-        # Generate Binan chart
-        bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_labels, bin_values)
-        
-        # Add references to charts in HTML (using cid for embedded images)
-        if cal_chart_path:
-            html_content += f"""
-            <div class="divider"></div>
-            <div class="trend-section">
-                <p class="trend-title">📊 Calamba - 30-Day AQI History</p>
-                <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="cid:calamba_chart" alt="Calamba 30-day AQI bar chart" class="trend-img" />
-            </div>
-            """
-            chart_files.append(("calamba_chart", cal_chart_path))
-        else:
-            logger.warning("Failed to generate Calamba chart")
-        
-        if bin_chart_path:
-            html_content += f"""
-            <div class="trend-section">
-                <p class="trend-title">📊 Biñan - 30-Day AQI History</p>
-                <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="cid:binan_chart" alt="Biñan 30-day AQI bar chart" class="trend-img" />
-            </div>
-            """
-            chart_files.append(("binan_chart", bin_chart_path))
-        else:
-            logger.warning("Failed to generate Biñan chart")
+    if cal_labels or bin_labels:
+        labels, cal_values, bin_values = merge_labels(
+            cal_labels, cal_values, bin_labels, bin_values
+        )
+        chart_url = build_trend_chart_url(labels, cal_values, bin_values)
+        html_content += f"""
+        <div class="divider"></div>
+        <div class="trend-section">
+            <p class="trend-title">📈 30-Day AQI Trend</p>
+            <p class="trend-subtitle">Past 30 days: daily average AQI · Today: live reading · Red points = above threshold (100)</p>
+            <img src="{chart_url}" alt="30-day AQI trend" class="trend-img" />
+        </div>
+        """
     else:
-        logger.warning("No AQI history data for charts")
+        logger.warning("No AQI history data for trend chart.")
     
-    # =========================
-    # AIR QUALITY NEWS SECTION
-    # =========================
     news_articles = get_air_quality_news()
     elevated_aqi = _has_elevated_aqi(fetched_aqi)
     if news_articles:
@@ -760,7 +715,6 @@ def build_html_email():
         """
     html_content += """
             <div class="footer">
-                <p>ℹ️ <strong>Methodology:</strong> Air quality data sourced from OpenWeatherMap Air Pollution API using the SILAM atmospheric composition model (Finnish Meteorological Institute). Ground-truth measurements may vary from these estimates.</p>
                 <p>Data sources: OpenWeatherMap API, Open-Meteo API, NewsAPI</p>
                 <p>This is an automated report. Please do not reply to this email.</p>
             </div>
@@ -768,38 +722,19 @@ def build_html_email():
     </body>
     </html>
     """
-    return html_content, chart_files
+    return html_content
 
 # =========================
 # SEND EMAIL
 # =========================
 def send_email():
     try:
-        html_email, chart_files = build_html_email()
-        msg = MIMEMultipart("related")
-        msg_alternative = MIMEMultipart("alternative")
-        msg.attach(msg_alternative)
-        
+        html_email = build_html_email()
+        msg = MIMEMultipart("alternative")
         msg["Subject"] = "🌍 Weekly AQI & Weather Report (Laguna)"
         msg["From"] = SENDER
         msg["To"] = ", ".join(RECEIVERS)
-        
-        msg_alternative.attach(MIMEText(html_email, "html"))
-        
-        # Attach chart images
-        for chart_id, chart_path in chart_files:
-            try:
-                with open(chart_path, "rb") as attachment:
-                    part = MIMEBase("application", "octet-stream")
-                    part.set_payload(attachment.read())
-                encoders.encode_base64(part)
-                part.add_header("Content-Disposition", f"inline; filename= {chart_id}.png")
-                part.add_header("Content-ID", f"<{chart_id}>")
-                msg.attach(part)
-                logger.info(f"Attached chart: {chart_id}")
-            except Exception as e:
-                logger.error(f"Failed to attach chart {chart_id}: {e}")
-        
+        msg.attach(MIMEText(html_email, "html"))
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SENDER, PASSWORD)
             server.sendmail(SENDER, RECEIVERS, msg.as_string())
