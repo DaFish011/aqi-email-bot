@@ -397,9 +397,11 @@ def compute_daily_data(history_list, current_pm25):
 # =========================
 # BUILD BAR CHART WITH PLOTLY (SAVED AS FILE)
 # =========================
-def build_bar_chart_plotly(location_name, values):
+def build_bar_chart_plotly(location_name, labels, values):
     """
     Build a professional bar chart using Plotly and save as PNG file.
+    labels: list of date labels (e.g., ["Apr 25", "Apr 26", ...])
+    values: list of AQI values
     """
     
     if not values or len(values) == 0:
@@ -414,15 +416,15 @@ def build_bar_chart_plotly(location_name, values):
         max_y = max(all_valid) if all_valid else 100
         y_max = max_y + math.ceil(max_y * 0.15)
 
-        # Generate date labels - show only Saturdays
-        today = datetime.utcnow() + PH_OFFSET
+        # Use provided labels, show only Saturdays
         date_labels = []
-        day_numbers = []
-        for i in range(len(values)):
-            date_obj = today - timedelta(days=len(values) - 1 - i)
-            day_numbers.append(i + 1)
-            if date_obj.weekday() == 5:  # Saturday
-                date_labels.append(date_obj.strftime("%b %d"))
+        day_numbers = list(range(1, len(values) + 1))
+        for label in labels:
+            # Show label only if it's a Saturday (we'll show some dates for clarity)
+            # For now, show every 7th label to avoid crowding
+            idx = labels.index(label)
+            if idx % 7 == 0 or idx == len(labels) - 1:
+                date_labels.append(label)
             else:
                 date_labels.append("")
         
@@ -463,9 +465,6 @@ def build_bar_chart_plotly(location_name, values):
             line=dict(color="rgba(211, 47, 47, 0.3)", width=2.5, dash="dash"),
             name="Threshold (100)"
         )
-
-        # Get today's date for reference
-        today = datetime.utcnow() + PH_OFFSET
 
         # Update layout - HIGH QUALITY RENDERING
         fig.update_layout(
@@ -682,10 +681,10 @@ def build_html_email():
         logger.info(f"Calamba: {len(cal_values)} days, Biñan: {len(bin_values)} days")
         
         # Generate Calamba chart
-        cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_values)
+        cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_labels, cal_values)
         
         # Generate Binan chart
-        bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_values)
+        bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_labels, bin_values)
         
         # Add references to charts in HTML (using cid for embedded images)
         if cal_chart_path:
