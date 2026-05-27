@@ -239,6 +239,22 @@ def _has_elevated_aqi(fetched_aqi):
     return False
 
 # =========================
+# COMPASS DIRECTION
+# =========================
+def get_compass_direction(wind_deg):
+    """Convert wind degree to compass direction"""
+    if wind_deg is None or wind_deg == "-":
+        return "N/A"
+    try:
+        degree = float(wind_deg)
+        directions = ["North", "NNE", "Northeast", "ENE", "East", "ESE", "Southeast", "SSE",
+                      "South", "SSW", "Southwest", "WSW", "West", "WNW", "Northwest", "NNW"]
+        index = round(degree / 22.5) % 16
+        return directions[index]
+    except (ValueError, TypeError):
+        return "N/A"
+
+# =========================
 # GET DAILY AVERAGES FROM HOURLY DATA
 # =========================
 def get_daily_averages(location_name):
@@ -365,60 +381,68 @@ def build_bar_chart_plotly(location_name, daily_data):
 # BUILD HTML EMAIL
 # =========================
 def build_html_email():
-    html_content = """
-    <html>
-    <head>
-        <style>
-            body { font-family: Arial, sans-serif; background-color: #f5f5f5; }
-            .container { max-width: 1000px; margin: 20px auto; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .header h1 { margin: 0; font-size: 28px; }
-            .header p { margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; }
-            .cards-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 20px; }
-            .aqi-card { border-radius: 8px; padding: 1.25rem; color: white; }
-            .card-location { font-size: 14px; font-weight: bold; margin-bottom: 1rem; }
-            .card-content { display: flex; gap: 0.75rem; align-items: flex-start; margin-bottom: 1rem; }
-            .aqi-box { background: rgba(255,255,255,0.2); border-radius: 6px; padding: 0.6rem; text-align: center; min-width: 70px; flex-shrink: 0; }
-            .aqi-value { font-size: 28px; font-weight: 500; line-height: 1; }
-            .aqi-label { font-size: 10px; margin-top: 4px; }
-            .card-text { flex: 1; font-size: 13px; }
-            .card-title { font-weight: 500; margin-bottom: 0.3rem; line-height: 1.2; }
-            .card-advice { opacity: 0.9; font-size: 12px; line-height: 1.3; }
-            .card-emoji { font-size: 32px; line-height: 1; flex-shrink: 0; }
-            .card-divider { border-top: 1px solid rgba(255,255,255,0.25); padding-top: 10px; font-size: 12px; }
-            .weather-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0 20px 20px 20px; }
-            .weather-card { background-color: #f9f9f9; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; display: flex; justify-content: space-around; align-items: center; }
-            .weather-item { text-align: center; }
-            .weather-icon { font-size: 20px; margin-bottom: 4px; }
-            .weather-value { font-size: 14px; font-weight: 500; color: #333; }
-            .weather-label { font-size: 10px; color: #888; }
-            .footer { background-color: #f5f5f5; padding: 15px; text-align: center; border-radius: 0 0 8px 8px; font-size: 11px; color: #999; }
-            .divider { height: 1px; background-color: #e0e0e0; margin: 20px; }
-            .news-section { margin: 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px; }
-            .news-title { color: #ff6f00; margin-top: 0; margin-bottom: 8px; }
-            .news-subtitle { font-size: 13px; color: #666; margin: 0 0 12px 0; line-height: 1.4; }
-            .news-intro { font-size: 13px; color: #c62828; font-weight: bold; margin: 0 0 12px 0; }
-            .news-tags { font-size: 11px; color: #e65100; font-weight: 600; }
-            .news-article { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ffe0b2; }
-            .news-article:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-            .news-article a { color: #ff6f00; text-decoration: none; font-weight: bold; }
-            .news-article a:hover { text-decoration: underline; }
-            .news-source { font-size: 12px; color: #999; }
-            .news-desc { font-size: 13px; color: #333; margin: 5px 0 0 0; }
-            .trend-section { margin: 20px; padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
-            .trend-title { font-size: 16px; font-weight: bold; color: #333; margin: 0 0 4px 0; }
-            .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 15px 0; }
-            .trend-img { width: 100%; max-width: 860px; border-radius: 6px; border: 1px solid #e0e0e0; display: block; background-color: #fafafa; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>🌍 Air Quality Report</h1>
-                <p>Weekly AQI & Weather Summary</p>
-            </div>
-    """
-    
+    html_content = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background-color: #f5f5f5; }
+.container { max-width: 1200px; margin: 0 auto; background-color: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center; }
+.header h1 { margin: 10px 0 5px 0; font-size: 32px; font-weight: bold; }
+.header p { margin: 0; font-size: 16px; opacity: 0.95; }
+.content { padding: 30px 20px; }
+.cards-grid { display: table; width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+.card-row { display: table-row; }
+.card-cell { display: table-cell; width: 50%; padding: 15px; vertical-align: top; }
+.aqi-card { border-radius: 12px; padding: 20px; color: white; margin-right: 10px; margin-left: 0; }
+.card-cell:last-child .aqi-card { margin-left: 10px; margin-right: 0; }
+.card-location { font-size: 16px; font-weight: bold; margin-bottom: 15px; }
+.card-main { display: flex; gap: 15px; align-items: flex-start; margin-bottom: 15px; }
+.aqi-box { background: rgba(255,255,255,0.25); border-radius: 8px; padding: 12px; text-align: center; min-width: 80px; }
+.aqi-value { font-size: 36px; font-weight: bold; line-height: 1; }
+.aqi-label { font-size: 12px; margin-top: 6px; }
+.card-text { flex: 1; }
+.card-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+.card-advice { font-size: 13px; opacity: 0.95; line-height: 1.4; }
+.card-emoji { font-size: 40px; line-height: 1; }
+.card-divider { border-top: 1px solid rgba(255,255,255,0.3); padding-top: 12px; margin-top: 12px; font-size: 13px; }
+.weather-grid { display: table; width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+.weather-row { display: table-row; }
+.weather-cell { display: table-cell; width: 50%; padding: 15px; vertical-align: top; }
+.weather-card { background-color: #f0f0f0; border-radius: 10px; padding: 20px; border: 1px solid #e0e0e0; margin-right: 10px; margin-left: 0; }
+.weather-cell:last-child .weather-card { margin-left: 10px; margin-right: 0; }
+.weather-items { display: flex; justify-content: space-around; }
+.weather-item { text-align: center; }
+.weather-icon { font-size: 24px; margin-bottom: 8px; }
+.weather-value { font-size: 16px; font-weight: bold; color: #333; }
+.weather-label { font-size: 12px; color: #888; margin-top: 4px; }
+.charts { padding: 0 20px 30px 20px; }
+.chart-section { margin-bottom: 30px; }
+.chart-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 8px; }
+.chart-subtitle { font-size: 13px; color: #888; margin-bottom: 15px; }
+.chart-img { width: 100%; max-width: 900px; border-radius: 8px; border: 1px solid #e0e0e0; }
+.divider { height: 1px; background-color: #e0e0e0; margin: 30px 20px; }
+.news-section { margin: 30px 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 8px; }
+.news-title { color: #ff6f00; margin: 0 0 8px 0; font-size: 18px; font-weight: bold; }
+.news-subtitle { font-size: 13px; color: #666; margin: 0 0 12px 0; line-height: 1.4; }
+.news-article { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ffe0b2; }
+.news-article:last-child { border-bottom: none; }
+.news-article a { color: #ff6f00; text-decoration: none; font-weight: bold; }
+.news-source { font-size: 12px; color: #999; }
+.news-desc { font-size: 13px; color: #333; margin: 5px 0 0 0; }
+.footer { background-color: #f5f5f5; padding: 20px; text-align: center; font-size: 11px; color: #999; border-top: 1px solid #e0e0e0; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🌍 Air Quality Report</h1>
+        <p>Weekly AQI Summary</p>
+    </div>
+    <div class="content">
+"""
+
     # Fetch current AQI for both locations
     fetched_aqi = {}
     location_data = {}
@@ -431,8 +455,8 @@ def build_html_email():
         if not aqi_data:
             logger.warning(f"No AQI data for {loc['name']}")
     
-    # Build AQI cards (2 columns)
-    html_content += '<div class="cards-grid">'
+    # Build AQI cards (side by side)
+    html_content += '<table class="cards-grid"><tr>'
     
     for loc in locations:
         aqi_data = location_data.get(loc["name"])
@@ -444,35 +468,30 @@ def build_html_email():
         aqi_info = aqi_map.get(aqi_level, aqi_map[3])
         main_pollutant = aqi_data.get("main_pollutant", "N/A")
         
-        card_html = f"""
+        html_content += f"""
+        <td class="card-cell">
             <div class="aqi-card" style="background-color: {aqi_info['color']};">
                 <div class="card-location">📍 {html.escape(loc['name'])}</div>
-                
-                <div class="card-content">
+                <div class="card-main">
                     <div class="aqi-box">
                         <div class="aqi-value">{aqi_value}</div>
                         <div class="aqi-label">AQI</div>
                     </div>
-                    
                     <div class="card-text">
                         <div class="card-title">{aqi_info['label']}</div>
                         <div class="card-advice">{aqi_info['advice']}</div>
                     </div>
-                    
                     <div class="card-emoji">{aqi_info['emoji']}</div>
                 </div>
-                
-                <div class="card-divider">
-                    <strong>Main: {main_pollutant}</strong>
-                </div>
+                <div class="card-divider"><strong>Main: {main_pollutant}</strong></div>
             </div>
+        </td>
         """
-        html_content += card_html
     
-    html_content += '</div>'
+    html_content += '</tr></table>'
     
-    # Build weather cards (2 columns)
-    html_content += '<div class="weather-grid">'
+    # Build weather cards (side by side)
+    html_content += '<table class="weather-grid"><tr>'
     
     for loc in locations:
         aqi_data = location_data.get(loc["name"])
@@ -482,32 +501,33 @@ def build_html_email():
         temp = aqi_data.get("temperature", "-")
         humidity = aqi_data.get("humidity", "-")
         wind_direction = aqi_data.get("wind_direction", "-")
-        wind_speed = aqi_data.get("wind_speed", "-")
+        wind_compass = get_compass_direction(wind_direction)
         
-        weather_html = f"""
+        html_content += f"""
+        <td class="weather-cell">
             <div class="weather-card">
-                <div class="weather-item">
-                    <div class="weather-icon">🌡️</div>
-                    <div class="weather-value">{temp}°C</div>
-                    <div class="weather-label">Temp</div>
-                </div>
-                
-                <div class="weather-item">
-                    <div class="weather-icon">🧭</div>
-                    <div class="weather-value">{wind_direction}°</div>
-                    <div class="weather-label">Wind</div>
-                </div>
-                
-                <div class="weather-item">
-                    <div class="weather-icon">💧</div>
-                    <div class="weather-value">{humidity}%</div>
-                    <div class="weather-label">Humidity</div>
+                <div class="weather-items">
+                    <div class="weather-item">
+                        <div class="weather-icon">🌡️</div>
+                        <div class="weather-value">{temp}°C</div>
+                        <div class="weather-label">Temp</div>
+                    </div>
+                    <div class="weather-item">
+                        <div class="weather-icon">🧭</div>
+                        <div class="weather-value">{wind_compass}</div>
+                        <div class="weather-label">Wind Dir</div>
+                    </div>
+                    <div class="weather-item">
+                        <div class="weather-icon">💧</div>
+                        <div class="weather-value">{humidity}%</div>
+                        <div class="weather-label">Humidity</div>
+                    </div>
                 </div>
             </div>
+        </td>
         """
-        html_content += weather_html
     
-    html_content += '</div>'
+    html_content += '</tr></table>'
     
     # Fetch and build charts
     logger.info("Fetching 30-day daily averages...")
@@ -519,15 +539,16 @@ def build_html_email():
     
     chart_files = []
     
+    html_content += '<div class="charts">'
+    
     if cal_daily:
         cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_daily)
         if cal_chart_path:
-            html_content += f"""
-            <div class="divider"></div>
-            <div class="trend-section">
-                <p class="trend-title">📊 Calamba - 30-Day AQI History</p>
-                <p class="trend-subtitle">Daily average AQI · Color-coded by severity level</p>
-                <img src="cid:calamba_chart" alt="Calamba 30-day AQI" class="trend-img" />
+            html_content += """
+            <div class="chart-section">
+                <div class="chart-title">📊 Calamba - 30-Day AQI History</div>
+                <div class="chart-subtitle">Daily average AQI · Color-coded by severity level</div>
+                <img src="cid:calamba_chart" alt="Calamba 30-day AQI" class="chart-img" />
             </div>
             """
             chart_files.append(("calamba_chart", cal_chart_path))
@@ -535,14 +556,16 @@ def build_html_email():
     if bin_daily:
         bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_daily)
         if bin_chart_path:
-            html_content += f"""
-            <div class="trend-section">
-                <p class="trend-title">📊 Biñan - 30-Day AQI History</p>
-                <p class="trend-subtitle">Daily average AQI · Color-coded by severity level</p>
-                <img src="cid:binan_chart" alt="Biñan 30-day AQI" class="trend-img" />
+            html_content += """
+            <div class="chart-section">
+                <div class="chart-title">📊 Biñan - 30-Day AQI History</div>
+                <div class="chart-subtitle">Daily average AQI · Color-coded by severity level</div>
+                <img src="cid:binan_chart" alt="Biñan 30-day AQI" class="chart-img" />
             </div>
             """
             chart_files.append(("binan_chart", bin_chart_path))
+    
+    html_content += '</div>'
     
     # NEWS
     news_articles = get_air_quality_news()
@@ -554,10 +577,6 @@ def build_html_email():
             <h3 class="news-title">📰 This Week's Air Quality & Environment Headlines</h3>
             <p class="news-subtitle">News from the Laguna region and Taal area that may affect air quality</p>
         """
-        if elevated_aqi:
-            html_content += """
-            <p class="news-intro">⚠️ Elevated AQI detected. Related headlines below.</p>
-        """
         for article in news_articles:
             title = html.escape(article.get("title") or "No title")
             description = html.escape(article.get("description") or "No description")
@@ -565,25 +584,26 @@ def build_html_email():
             source = html.escape((article.get("source") or {}).get("name", "Unknown"))
             tags = article.get("_news_tags", [])
             tags_line = html.escape(" · ".join(tags)) if tags else ""
-            tags_html = f'<span class="news-tags">{tags_line}</span><br>' if tags_line else ""
+            
             html_content += f"""
             <div class="news-article">
-                {tags_html}
                 <a href="{url}" target="_blank">{title}</a><br>
-                <span class="news-source">{source}</span><br>
+                <span class="news-source">{source}</span>
+                {f' · {tags_line}' if tags_line else ''}<br>
                 <p class="news-desc">{description}</p>
             </div>
             """
         html_content += "</div>"
     
     html_content += """
-            <div class="footer">
-                <p>Data sources: IQAir API, Open-Meteo API, NewsAPI</p>
-                <p>This is an automated report. Please do not reply to this email.</p>
-            </div>
-        </div>
-    </body>
-    </html>
+    </div>
+    <div class="footer">
+        <p>Data sources: IQAir API, Open-Meteo API, NewsAPI</p>
+        <p>This is an automated report. Please do not reply to this email.</p>
+    </div>
+</div>
+</body>
+</html>
     """
     return html_content, chart_files
 
