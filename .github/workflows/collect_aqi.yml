@@ -26,12 +26,9 @@ jobs:
         run: python3 collect_aqi.py
       
       - name: Commit and push database updates
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/DaFish011/aqi-email-bot.git
           git add aqi_history.db
           git commit -m "Update AQI history - $(date)" || echo "No changes to commit"
-          git push origin main
+          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/DaFish011/aqi-email-bot.git main
