@@ -61,8 +61,8 @@ locations = [
     {"name": "Calamba, Laguna", "lat": 14.1919, "lon": 121.0711},
     {"name": "Biñan, Laguna",   "lat": 14.2769, "lon": 121.0589},
 ]
-TAAL_LAT  = 14.3568
-TAAL_LON  = 121.0064
+TAAL_LAT  = 14.0136
+TAAL_LON  = 120.9842
 PH_OFFSET = timedelta(hours=8)
 
 # =========================
@@ -102,20 +102,35 @@ def get_bearing(lat1, lon1, lat2, lon2):
     y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     return (math.degrees(math.atan2(x, y)) + 360) % 360
 
-def get_wind_message(loc_lat, loc_lon, wind_deg, wind_speed):
-    compass = get_compass_direction(wind_deg)
-    speed_str = f"{wind_speed} m/s" if wind_speed not in (None, "-") else ""
-    if wind_deg is None:
-        return f"💨 Wind direction: N/A"
-    bearing_to_taal = get_bearing(loc_lat, loc_lon, TAAL_LAT, TAAL_LON)
-    wind_from = (float(wind_deg) + 180) % 360
-    diff = abs(wind_from - bearing_to_taal)
+def get_wind_message(taal_wind_deg, loc_lat, loc_lon, loc_name, local_wind_deg, local_wind_speed):
+    """
+    Compare Taal's wind direction to location's position.
+    If Taal wind points toward the location, ash risk.
+    """
+    if taal_wind_deg is None or local_wind_deg is None:
+        compass = get_compass_direction(local_wind_deg)
+        return f"Local wind: {compass}"
+    
+    # Bearing FROM Taal TO this location
+    bearing_taal_to_loc = get_bearing(TAAL_LAT, TAAL_LON, loc_lat, loc_lon)
+    
+    # Taal wind direction (where it's blowing FROM)
+    taal_wind_from = (float(taal_wind_deg) + 180) % 360
+    
+    # Check if Taal wind points toward this location (within 60° cone)
+    diff = abs(taal_wind_from - bearing_taal_to_loc)
     if diff > 180:
         diff = 360 - diff
-    if diff < 60:
-        return f"💨 Wind from Taal direction: {compass} ({speed_str})"
+    
+    taal_compass = get_compass_direction(taal_wind_deg)
+    local_compass = get_compass_direction(local_wind_deg)
+    
+    wind_toward_you = diff < 60
+    
+    if wind_toward_you:
+        return f"Taal wind: {taal_compass} → toward {loc_name} (⚠️ volcanic ash risk)"
     else:
-        return f"💨 Wind away from Taal: {compass} ({speed_str})"
+        return f"Taal wind: {taal_compass} → away from {loc_name} (✅ safe)"
 
 # =========================
 # FETCH CURRENT AQI FROM IQAIR
@@ -348,7 +363,7 @@ def build_bar_chart_plotly(location_name, daily_data):
 # =========================
 # BUILD LOCATION CARD HTML (exact 4:49 design + Taal wind)
 # =========================
-def build_card(loc, aqi_data):
+def build_card(loc, aqi_data, taal_wind):
     if not aqi_data:
         return f"<td width='50%' style='padding:8px;vertical-align:top;'><p style='color:#999;font-size:13px;'>No data available for {html.escape(loc['name'])}</p></td>"
 
@@ -361,7 +376,8 @@ def build_card(loc, aqi_data):
     wind_deg       = aqi_data.get("wind_direction")
     color          = aqi_info["color"]
 
-    wind_message = get_wind_message(loc["lat"], loc["lon"], wind_deg, wind_speed)
+    taal_wind_deg = taal_wind.get("wind_direction") if taal_wind else None
+    wind_message = get_wind_message(taal_wind_deg, loc["lat"], loc["lon"], loc["name"], wind_deg, wind_speed)
 
     return f"""
 <td width="50%" style="padding: 8px; vertical-align: top;">
@@ -444,6 +460,7 @@ def build_card(loc, aqi_data):
 # BUILD HTML EMAIL
 # =========================
 def build_html_email():
+    taal_wind = get_current_aqi(TAAL_LAT, TAAL_LON)
     location_data = {loc["name"]: get_current_aqi(loc["lat"], loc["lon"]) for loc in locations}
 
     html_content = """<!DOCTYPE html>
@@ -472,7 +489,7 @@ def build_html_email():
         <tr>
 """
     for loc in locations:
-        html_content += build_card(loc, location_data.get(loc["name"]))
+        html_content += build_card(loc, location_data.get(loc["name"]), taal_wind)
 
     html_content += """
         </tr>
