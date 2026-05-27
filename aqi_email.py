@@ -227,17 +227,27 @@ def get_news(max_articles=6):
 # FIREBASE DAILY AVERAGES
 # =========================
 def get_daily_averages(location_name):
+    """Always returns exactly 30 days. Missing days have aqi=None."""
     try:
         data = db.reference(f"aqi_hourly/{location_name}").get()
-        if not data:
-            logger.warning(f"No hourly data in Firebase for {location_name}")
-            return []
+        
+        # Build list of last 30 days in PH time
+        today = (datetime.utcnow() + PH_OFFSET).date()
         result = []
-        for date_str in sorted(data.keys()):
-            vals = [v.get("aqi") for v in data[date_str].values() if v.get("aqi") is not None]
-            if vals:
-                result.append({"date": date_str, "aqi": round(sum(vals) / len(vals))})
-        logger.info(f"{location_name}: {len(result)} days of averages")
+        for i in range(29, -1, -1):
+            day = today - timedelta(days=i)
+            date_str = day.strftime("%Y-%m-%d")
+            
+            if data and date_str in data:
+                vals = [v.get("aqi") for v in data[date_str].values() if v.get("aqi") is not None]
+                avg = round(sum(vals) / len(vals)) if vals else None
+            else:
+                avg = None
+            
+            result.append({"date": date_str, "aqi": avg})
+        
+        filled = sum(1 for d in result if d["aqi"] is not None)
+        logger.info(f"{location_name}: {filled}/30 days have data")
         return result
     except Exception as e:
         logger.error(f"Firebase error for {location_name}: {e}")
@@ -251,7 +261,7 @@ def build_bar_chart_plotly(location_name, daily_data):
         return None
     try:
         dates  = [d["date"] for d in daily_data]
-        values = [d["aqi"]  for d in daily_data]
+        values = [d["aqi"]  for d in daily_data]  # may contain None
 
         # Saturday labels on x-axis only
         x_labels = []
@@ -259,15 +269,28 @@ def build_bar_chart_plotly(location_name, daily_data):
             dt = datetime.strptime(date_str, "%Y-%m-%d")
             x_labels.append(dt.strftime("%b %d") if dt.weekday() == 5 else "")
 
-        max_y  = max(values) if values else 100
-        y_max  = max_y + math.ceil(max_y * 0.15)
-        colors = [aqi_map[get_aqi_level(v)]["color"] for v in values]
-        labels = [str(v) if v > 100 else "" for v in values]
+        # Colors and text labels - gray for missing days
+        colors = []
+        labels = []
+        for v in values:
+            if v is not None:
+                colors.append(aqi_map[get_aqi_level(v)]["color"])
+                labels.append(str(v) if v > 100 else "")
+            else:
+                colors.append("#e0e0e0")
+                labels.append("")
+
+        # Replace None with 0 for plotting
+        plot_values = [v if v is not None else 0 for v in values]
+
+        valid = [v for v in values if v is not None]
+        max_y = max(valid) if valid else 100
+        y_max = max_y + math.ceil(max_y * 0.15)
 
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            x=list(range(1, len(values) + 1)),
-            y=values,
+            x=list(range(1, len(plot_values) + 1)),
+            y=plot_values,
             marker=dict(color=colors, line=dict(width=0)),
             text=labels,
             textposition="outside",
@@ -284,7 +307,7 @@ def build_bar_chart_plotly(location_name, daily_data):
             ),
             xaxis=dict(
                 tickmode="array",
-                tickvals=list(range(1, len(values) + 1)),
+                tickvals=list(range(1, len(plot_values) + 1)),
                 ticktext=x_labels,
                 tickfont=dict(size=10, color="#666", family="Arial"),
                 gridcolor="rgba(0,0,0,0.05)",
@@ -305,7 +328,6 @@ def build_bar_chart_plotly(location_name, daily_data):
             height=400,
         )
 
-        # Use consistent safe name matching what build_html_email uses
         safe = location_name.replace(",", "").replace(" ", "_").lower().replace("ñ", "n")
         path = f"/tmp/{safe}_chart.png"
         fig.write_image(path)
@@ -375,17 +397,17 @@ def build_card(loc, aqi_data):
 
     <!-- Card Body -->
     <tr>
-      <td style="background-color:#ffffff; padding:16px;">
+      <td width="100%" style="background-color:#ffffff; padding:16px;">
 
         <!-- Main pollutant -->
-        <p style="font-family:Arial,sans-serif; font-size:12px; color:#555; margin:0 0 14px 0;">
+        <p style="font-family:Arial,sans-serif; font-size:12px; color:#555; margin:0 0 14px 0; width:100%;">
           Main pollutant: <strong>{main_pollutant}</strong>
         </p>
 
         <!-- Wind Info -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
           <tr>
-            <td style="background:#f5f5f5; border-left:3px solid #bdbdbd; padding:10px 12px; border-radius:0 6px 6px 0;">
+            <td width="100%" style="background:#f5f5f5; border-left:3px solid #bdbdbd; padding:10px 12px; border-radius:0 6px 6px 0;">
               <div style="font-family:Arial,sans-serif; font-size:10px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
                 💨 Wind
               </div>
@@ -436,7 +458,7 @@ def build_html_email():
 <body style="margin:0; padding:10px; background-color:#f5f5f5; font-family:Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0">
 <tr><td align="center">
-<table width="900" cellpadding="0" cellspacing="0" style="background-color:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1); table-layout:fixed;">
 
   <!-- Header -->
   <tr>
@@ -449,7 +471,7 @@ def build_html_email():
   <!-- Location Cards -->
   <tr>
     <td style="padding:20px;">
-      <table width="100%" cellpadding="0" cellspacing="0">
+      <table width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;">
         <tr>
 """
     for loc in locations:
@@ -468,8 +490,6 @@ def build_html_email():
 
     for loc in locations:
         daily = get_daily_averages(loc["name"])
-        if not daily:
-            continue
         safe = loc["name"].replace(",", "").replace(" ", "_").lower().replace("ñ", "n")
         cid  = f"{safe}_chart"
         path = build_bar_chart_plotly(loc["name"], daily)
