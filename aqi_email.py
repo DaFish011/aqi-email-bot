@@ -395,7 +395,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
 .header p { font-size: 14px; opacity: 0.95; }
 .content { padding: 20px; }
 .cards-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; }
-@media (max-width: 600px) { .cards-wrapper { grid-template-columns: 1fr; } }
 .location-label { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 10px; padding: 0 5px; }
 .aqi-card { border-left: 4px solid #667eea; border-radius: 8px; overflow: hidden; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .aqi-header { padding: 15px; color: white; display: flex; gap: 12px; align-items: flex-start; }
