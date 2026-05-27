@@ -359,37 +359,37 @@ def build_card(loc, aqi_data):
     taal_info = get_taal_wind_info(loc["lat"], loc["lon"], wind_deg, wind_speed)
 
     return f"""
-<td width="50%" style="padding:10px; vertical-align:top;">
+<td width="50%" style="padding:6px; vertical-align:top;">
 
   <!-- Location label -->
-  <p style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333; margin:0 0 10px 0;">
+  <p style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333; margin:0 0 6px 0;">
     📍 {html.escape(loc['name'])}
   </p>
 
   <!-- Card wrapper -->
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px; overflow:hidden; border:1px solid #e0e0e0;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:8px; overflow:hidden; border:1px solid #e0e0e0; table-layout:fixed;">
 
     <!-- AQI Header -->
     <tr>
-      <td style="background-color:{color}; padding:18px 16px; border-radius:10px 10px 0 0;">
+      <td style="background-color:{color}; padding:10px 8px; border-radius:8px 8px 0 0;">
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
             <!-- AQI number box -->
-            <td width="72" style="vertical-align:middle;">
-              <table cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.22); border-radius:8px; width:72px;">
-                <tr><td style="padding:12px 8px; text-align:center;">
-                  <div style="font-family:Arial,sans-serif; font-size:30px; font-weight:bold; color:white; line-height:1;">{aqi_value}</div>
-                  <div style="font-family:Arial,sans-serif; font-size:10px; color:white; margin-top:4px;">AQI</div>
+            <td width="52" style="vertical-align:middle;">
+              <table cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.22); border-radius:6px; width:52px;">
+                <tr><td style="padding:6px 4px; text-align:center;">
+                  <div style="font-family:Arial,sans-serif; font-size:22px; font-weight:bold; color:white; line-height:1;">{aqi_value}</div>
+                  <div style="font-family:Arial,sans-serif; font-size:9px; color:white; margin-top:3px;">AQI</div>
                 </td></tr>
               </table>
             </td>
             <!-- Label + advice -->
-            <td style="padding-left:14px; vertical-align:middle;">
-              <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:white; margin-bottom:6px;">{aqi_info['label']}</div>
-              <div style="font-family:Arial,sans-serif; font-size:11px; color:white; line-height:1.5;">{aqi_info['advice']}</div>
+            <td style="padding-left:8px; vertical-align:middle;">
+              <div style="font-family:Arial,sans-serif; font-size:12px; font-weight:bold; color:white; margin-bottom:3px;">{aqi_info['label']}</div>
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:white; line-height:1.3;">{aqi_info['advice']}</div>
             </td>
             <!-- Emoji -->
-            <td width="40" style="vertical-align:middle; text-align:right; font-size:28px; padding-left:8px;">{aqi_info['emoji']}</td>
+            <td width="28" style="vertical-align:middle; text-align:right; font-size:22px; padding-left:4px;">{aqi_info['emoji']}</td>
           </tr>
         </table>
       </td>
@@ -397,21 +397,21 @@ def build_card(loc, aqi_data):
 
     <!-- Card Body -->
     <tr>
-      <td width="100%" style="background-color:#ffffff; padding:16px;">
+      <td width="100%" style="background-color:#ffffff; padding:10px 8px;">
 
         <!-- Main pollutant -->
-        <p style="font-family:Arial,sans-serif; font-size:12px; color:#555; margin:0 0 14px 0; width:100%;">
-          Main pollutant: <strong>{main_pollutant}</strong>
+        <p style="font-family:Arial,sans-serif; font-size:10px; color:#555; margin:0 0 8px 0;">
+          Main: <strong>{main_pollutant}</strong>
         </p>
 
         <!-- Wind Info -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
           <tr>
-            <td width="100%" style="background:#f5f5f5; border-left:3px solid #bdbdbd; padding:10px 12px; border-radius:0 6px 6px 0;">
-              <div style="font-family:Arial,sans-serif; font-size:10px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+            <td width="100%" style="background:#f5f5f5; border-left:3px solid #bdbdbd; padding:6px 8px; border-radius:0 4px 4px 0;">
+              <div style="font-family:Arial,sans-serif; font-size:9px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:2px;">
                 💨 Wind
               </div>
-              <div style="font-family:Arial,sans-serif; font-size:12px; color:#555; line-height:1.5;">
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:#555; line-height:1.4;">
                 {html.escape(taal_info['message'])}
               </div>
             </td>
@@ -419,19 +419,19 @@ def build_card(loc, aqi_data):
         </table>
 
         <!-- Weather stats -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eeeeee; border-radius:6px; overflow:hidden;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eeeeee; border-radius:4px; overflow:hidden;">
           <tr>
-            <td width="33%" style="padding:10px 8px; text-align:center; background:#fafafa; border-right:1px solid #eeeeee;">
-              <div style="font-family:Arial,sans-serif; font-size:10px; color:#aaa; margin-bottom:4px;">Temperature</div>
-              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{temp}°C</div>
+            <td width="33%" style="padding:6px 4px; text-align:center; background:#fafafa; border-right:1px solid #eeeeee;">
+              <div style="font-family:Arial,sans-serif; font-size:9px; color:#aaa; margin-bottom:2px;">Temp</div>
+              <div style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333;">{temp}°C</div>
             </td>
-            <td width="34%" style="padding:10px 8px; text-align:center; background:#fafafa; border-right:1px solid #eeeeee;">
-              <div style="font-family:Arial,sans-serif; font-size:10px; color:#aaa; margin-bottom:4px;">Wind Speed</div>
-              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{wind_speed} m/s</div>
+            <td width="34%" style="padding:6px 4px; text-align:center; background:#fafafa; border-right:1px solid #eeeeee;">
+              <div style="font-family:Arial,sans-serif; font-size:9px; color:#aaa; margin-bottom:2px;">Wind</div>
+              <div style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333;">{wind_speed}m/s</div>
             </td>
-            <td width="33%" style="padding:10px 8px; text-align:center; background:#fafafa;">
-              <div style="font-family:Arial,sans-serif; font-size:10px; color:#aaa; margin-bottom:4px;">Humidity</div>
-              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{humidity}%</div>
+            <td width="33%" style="padding:6px 4px; text-align:center; background:#fafafa;">
+              <div style="font-family:Arial,sans-serif; font-size:9px; color:#aaa; margin-bottom:2px;">Humidity</div>
+              <div style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333;">{humidity}%</div>
             </td>
           </tr>
         </table>
