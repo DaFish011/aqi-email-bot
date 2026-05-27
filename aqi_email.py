@@ -389,29 +389,29 @@ def build_html_email():
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5; padding: 10px; }
-.container { max-width: 900px; margin: 0 auto; background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.container { max-width: 1200px; margin: 0 auto; background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
 .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; }
 .header h1 { font-size: 28px; font-weight: 600; margin-bottom: 5px; }
 .header p { font-size: 14px; opacity: 0.95; }
-.content { padding: 20px; }
-.cards-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; }
-.location-label { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 10px; padding: 0 5px; }
+.content { padding: 15px; }
+.cards-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 25px; }
+.location-label { font-size: 12px; font-weight: 600; color: #333; margin-bottom: 8px; padding: 0 3px; }
 .aqi-card { border-left: 4px solid #667eea; border-radius: 8px; overflow: hidden; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.aqi-header { padding: 15px; color: white; display: flex; gap: 12px; align-items: flex-start; }
-.aqi-box { background: rgba(255,255,255,0.2); border-radius: 6px; padding: 10px; text-align: center; min-width: 70px; flex-shrink: 0; }
-.aqi-value { font-size: 32px; font-weight: 700; line-height: 1; }
-.aqi-label { font-size: 11px; margin-top: 4px; }
-.aqi-text { flex: 1; }
-.aqi-title { font-size: 15px; font-weight: 600; margin-bottom: 3px; line-height: 1.2; }
-.aqi-advice { font-size: 12px; opacity: 0.95; line-height: 1.3; }
-.aqi-emoji { font-size: 36px; line-height: 1; flex-shrink: 0; }
-.aqi-body { padding: 12px 15px; }
-.aqi-info { font-size: 12px; color: #666; margin-bottom: 10px; }
-.wind-message { background-color: #e3f2fd; border-left: 3px solid #1976d2; padding: 10px; border-radius: 4px; font-size: 12px; color: #1565c0; margin-bottom: 10px; }
-.weather-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-.weather-table td { padding: 8px; text-align: center; border: 1px solid #f0f0f0; background-color: #f9f9f9; font-size: 12px; }
-.weather-label { color: #888; font-weight: 500; }
-.weather-value { font-weight: 600; color: #333; margin-top: 2px; }
+.aqi-header { padding: 12px; color: white; display: flex; gap: 10px; align-items: flex-start; }
+.aqi-box { background: rgba(255,255,255,0.2); border-radius: 6px; padding: 8px; text-align: center; min-width: 60px; flex-shrink: 0; }
+.aqi-value { font-size: 28px; font-weight: 700; line-height: 1; }
+.aqi-label { font-size: 10px; margin-top: 3px; }
+.aqi-text { flex: 1; min-width: 0; }
+.aqi-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; line-height: 1.2; }
+.aqi-advice { font-size: 11px; opacity: 0.95; line-height: 1.3; }
+.aqi-emoji { font-size: 32px; line-height: 1; flex-shrink: 0; }
+.aqi-body { padding: 10px 12px; }
+.aqi-info { font-size: 11px; color: #666; margin-bottom: 8px; }
+.wind-message { background-color: #e3f2fd; border-left: 3px solid #1976d2; padding: 8px; border-radius: 4px; font-size: 11px; color: #1565c0; margin-bottom: 8px; }
+.weather-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
+.weather-table td { padding: 6px 4px; text-align: center; border: 1px solid #f0f0f0; background-color: #f9f9f9; font-size: 10px; }
+.weather-label { color: #888; font-weight: 500; font-size: 9px; }
+.weather-value { font-weight: 600; color: #333; margin-top: 2px; font-size: 11px; }
 .divider { height: 1px; background-color: #e0e0e0; margin: 25px 0; }
 .charts { padding: 0; }
 .chart-section { margin-bottom: 25px; padding: 20px; }
