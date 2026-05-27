@@ -1,8 +1,7 @@
 name: Collect AQI Data
 
 on:
-  schedule:
-    workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
   collect:
@@ -10,20 +9,20 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      
+
       - name: Install dependencies
         run: pip install requests firebase-admin
-      
+
       - name: Create Firebase credentials file
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
         run: echo "$FIREBASE_KEY" > firebase-key.json
-      
+
       - name: Run AQI collector
         env:
           IQAIR_API_KEY: ${{ secrets.IQAIR_API_KEY }}
