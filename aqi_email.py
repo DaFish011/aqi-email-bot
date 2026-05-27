@@ -9,7 +9,8 @@ import time
 import json
 import html
 import urllib.parse
-import sqlite3
+import firebase_admin
+from firebase_admin import db, credentials
 from datetime import datetime, timedelta
 from requests.exceptions import RequestException
 
@@ -33,9 +34,16 @@ if not all([API_KEY, SENDER, PASSWORD, RECEIVERS_STR]):
 RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 
 # =========================
-# DATABASE
+# FIREBASE SETUP
 # =========================
-DB_PATH = "aqi_history.db"
+FIREBASE_KEY = "firebase-key.json"
+FIREBASE_URL = "https://aqi-email-bot-default-rtdb.asia-southeast1.firebasedatabase.app"
+
+try:
+    cred = credentials.Certificate(FIREBASE_KEY)
+    firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
+except ValueError:
+    pass
 
 # =========================
 # LOCATIONS
@@ -283,40 +291,37 @@ def _has_elevated_aqi(fetched_aqi):
     return False
 
 # =========================
-# AQI HISTORY (FROM DATABASE)
+# AQI HISTORY (FROM FIREBASE)
 # =========================
 def get_aqi_history_from_db(location_name):
-    """Fetch AQI history from SQLite for a location"""
+    """Fetch AQI history from Firebase for a location"""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT date, pm2_5, aqi FROM aqi_readings 
-            WHERE location = ?
-            ORDER BY date ASC
-        """, (location_name,))
-        rows = cursor.fetchall()
-        conn.close()
+        ref = db.reference(f"aqi_readings/{location_name}")
+        data = ref.get()
+        
+        if not data:
+            logger.warning(f"No Firebase data for {location_name}")
+            return []
         
         history_list = []
-        for date_str, pm2_5, aqi in rows:
+        for date_str in sorted(data.keys()):
+            entry = data[date_str]
             history_list.append({
                 "date": date_str,
-                "pm2_5": pm2_5,
-                "aqi": aqi
+                "pm2_5": entry.get("pm2_5"),
+                "aqi": entry.get("aqi")
             })
         
-        logger.info(f"Loaded {len(history_list)} records for {location_name} from database")
+        logger.info(f"Loaded {len(history_list)} records for {location_name} from Firebase")
         return history_list
     except Exception as e:
-        logger.error(f"Failed to fetch AQI history from database for {location_name}: {e}")
+        logger.error(f"Failed to fetch AQI history from Firebase for {location_name}: {e}")
         return []
 
 def compute_daily_data(history_list, current_pm25):
     """
-    Past days  → use AQI from database.
+    Past days  → use AQI from Firebase.
     Today      → live current AQI value passed in as current_pm25.
-    Uses data from database (history_list contains {date, pm2_5, aqi})
     """
     today_key = (datetime.utcnow() + PH_OFFSET).strftime("%Y-%m-%d")
     labels = []
@@ -715,7 +720,7 @@ def build_html_email():
         """
     html_content += """
             <div class="footer">
-                <p>Data sources: OpenWeatherMap API, Open-Meteo API, NewsAPI</p>
+                <p>Data sources: OpenWeatherMap API, Open-Meteo API, NewsAPI, Firebase Realtime Database</p>
                 <p>This is an automated report. Please do not reply to this email.</p>
             </div>
         </div>
