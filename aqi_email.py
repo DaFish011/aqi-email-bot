@@ -104,30 +104,30 @@ def get_bearing(lat1, lon1, lat2, lon2):
 
 def get_wind_message(taal_wind_deg, loc_lat, loc_lon, loc_name, local_wind_deg, local_wind_speed):
     """
-    Compare Taal's wind direction to location's position.
-    If Taal wind points toward the location, ash risk.
+    Taal is SOUTHWEST of Calamba/Binan.
+    Check if Taal wind blows TOWARD these cities (northeast) = ash risk
+    Check if Taal wind blows AWAY (southwest) = safe
     """
-    if taal_wind_deg is None or local_wind_deg is None:
-        compass = get_compass_direction(local_wind_deg)
-        return f"Local wind: {compass}"
+    if taal_wind_deg is None:
+        return f"Taal wind: unavailable"
     
-    # Bearing FROM Taal TO this location
+    # Bearing FROM Taal TO this location (e.g., northeast to Calamba)
     bearing_taal_to_loc = get_bearing(TAAL_LAT, TAAL_LON, loc_lat, loc_lon)
     
-    # Taal wind direction (where it's blowing FROM)
-    taal_wind_from = (float(taal_wind_deg) + 180) % 360
+    # Taal wind direction = where wind is blowing TO
+    taal_wind_to = float(taal_wind_deg)
     
-    # Check if Taal wind points toward this location (within 60° cone)
-    diff = abs(taal_wind_from - bearing_taal_to_loc)
+    # Check if wind is blowing TOWARD this location (within 60° cone)
+    diff = abs(taal_wind_to - bearing_taal_to_loc)
     if diff > 180:
         diff = 360 - diff
     
     taal_compass = get_compass_direction(taal_wind_deg)
-    local_compass = get_compass_direction(local_wind_deg)
     
-    wind_toward_you = diff < 60
+    # If diff < 60°, wind is blowing toward the location = ash risk
+    wind_toward_location = diff < 60
     
-    if wind_toward_you:
+    if wind_toward_location:
         return f"Taal wind: {taal_compass} → toward {loc_name} (⚠️ volcanic ash risk)"
     else:
         return f"Taal wind: {taal_compass} → away from {loc_name} (✅ safe)"
