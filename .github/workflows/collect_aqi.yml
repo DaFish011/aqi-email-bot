@@ -1,6 +1,7 @@
 name: Collect AQI Data
 
 on:
+  schedule:
   workflow_dispatch:
 
 jobs:
@@ -25,5 +26,5 @@ jobs:
       
       - name: Run AQI collector
         env:
-          API_KEY: ${{ secrets.IQAIR_API_KEY }}
+          IQAIR_API_KEY: ${{ secrets.IQAIR_API_KEY }}
         run: python3 collect_aqi.py
