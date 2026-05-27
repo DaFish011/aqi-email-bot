@@ -144,14 +144,16 @@ def get_current_aqi(lat, lon):
         return None
 
 # =========================
-# NEWS
+# NEWS - NewsAPI + IQAir
 # =========================
 NEWS_EXCLUDE = ["pypi","mcp","software","stock market","crypto","football","basketball","celebrity","k-pop","recipe","horoscope"]
 NEWS_QUERIES = [
-    '(Calamba OR Binan) AND ("air quality" OR pollution OR haze OR smog)',
-    '(Laguna province) AND ("air quality" OR pollution OR haze OR ashfall)',
-    '(Taal OR "Taal Volcano") AND (eruption OR alert OR ash OR activity OR PHIVOLCS)',
-    '(Laguna OR Calamba) AND (wildfire OR "forest fire" OR smoke OR "open burning")',
+    '(Laguna OR Calabarzon OR CALABARZON) AND ("air quality" OR "AQI" OR pollution OR haze)',
+    '(Laguna OR Calamba OR Binan) AND (PM2.5 OR PM10 OR "air pollution")',
+    '(Taal) AND (eruption OR ashfall OR "volcanic ash" OR alert)',
+    '(Laguna OR Calabarzon) AND (industrial OR factory OR emissions)',
+    '(DENR OR EMB OR PAGASA) AND (Laguna OR Calabarzon) AND (air quality OR warning)',
+    '(Laguna OR Calamba OR Binan) AND (traffic OR congestion OR "vehicle emissions")',
 ]
 
 def _text(a): return f"{a.get('title','')} {a.get('description','')}".lower()
@@ -165,12 +167,14 @@ def _recent(a):
 def _score(a):
     t, score, tags = _text(a), 0, []
     if any(x in t for x in ("taal","phivolcs","volcanic","eruption","ashfall")): score+=5; tags.append("🌋 Volcano/Taal")
-    if any(x in t for x in ("air quality","aqi","pollution","pm2.5","smog")):    score+=4; tags.append("🌫️ Air quality")
-    if any(x in t for x in ("haze","vog","smoke","wildfire","forest fire")):     score+=3; tags.append("🔥 Smoke/haze")
-    if any(x in t for x in ("laguna","calamba","binan")):                        score+=2; tags.append("📍 Laguna area")
+    if any(x in t for x in ("air quality","aqi","pollution","pm2.5","pm10","smog")):    score+=4; tags.append("🌫️ Air quality")
+    if any(x in t for x in ("haze","vog","smoke","wildfire","forest fire","ashfall")):     score+=3; tags.append("🔥 Smoke/haze")
+    if any(x in t for x in ("laguna","calamba","binan","calabarzon")):                score+=2; tags.append("📍 Local")
+    if any(x in t for x in ("traffic","congestion","vehicle")): score+=1; tags.append("🚗 Traffic")
     return score, tags
 
-def get_news(max_articles=6):
+def get_newsapi(max_articles=3):
+    """Fetch from NewsAPI"""
     if not NEWS_API_KEY:
         logger.warning("NEWS_API_KEY not set")
         return []
@@ -186,10 +190,71 @@ def get_news(max_articles=6):
                 if not link or link in seen or _exclude(a) or not _recent(a): continue
                 sc, tags = _score(a)
                 if sc < 2: continue
-                seen.add(link); a["_score"]=sc; a["_tags"]=tags; scored.append(a)
-        except Exception as e: logger.error(f"News error: {e}")
-    result = sorted(scored, key=lambda x: x["_score"], reverse=True)[:max_articles]
-    logger.info(f"News: {len(result)} articles found")
+                seen.add(link); a["_score"]=sc; a["_tags"]=tags; a["_source"]="NewsAPI"; scored.append(a)
+        except Exception as e: logger.error(f"NewsAPI error: {e}")
+    return sorted(scored, key=lambda x: x["_score"], reverse=True)[:max_articles]
+
+def get_iqair_news(max_articles=3):
+    """Fetch from IQAir news"""
+    if not IQAIR_API_KEY:
+        return []
+    try:
+        # IQAir news endpoint for Philippines
+        r = requests.get("http://api.airvisual.com/v2/news",
+            params={"country":"Philippines","apiKey":IQAIR_API_KEY},
+            timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if data.get("status") != "success":
+            logger.warning("IQAir news: no data")
+            return []
+        
+        scored = []
+        for a in data.get("data", []):
+            title = a.get("title","")
+            desc = a.get("description","")
+            link = a.get("link")
+            
+            if not link: continue
+            
+            # Score based on content
+            text = f"{title} {desc}".lower()
+            score = 0
+            tags = []
+            
+            if any(x in text for x in ("laguna","calamba","binan","calabarzon")): score+=3; tags.append("📍 Local")
+            if any(x in text for x in ("air quality","aqi","pollution","pm2.5")): score+=4; tags.append("🌫️ Air quality")
+            if any(x in text for x in ("taal","volcano")): score+=5; tags.append("🌋 Volcano")
+            if score == 0: score+=1  # Give base score to all IQAir articles
+            
+            a["_score"] = score
+            a["_tags"] = tags
+            a["_source"] = "IQAir"
+            scored.append(a)
+        
+        return sorted(scored, key=lambda x: x["_score"], reverse=True)[:max_articles]
+    except Exception as e:
+        logger.error(f"IQAir news error: {e}")
+        return []
+
+def get_news(max_articles=6):
+    """Combine NewsAPI + IQAir news"""
+    newsapi_articles = get_newsapi(max_articles=3)
+    iqair_articles = get_iqair_news(max_articles=3)
+    
+    # Combine and dedupe by URL
+    all_articles = newsapi_articles + iqair_articles
+    seen_urls = set()
+    result = []
+    
+    for a in sorted(all_articles, key=lambda x: x.get("_score", 0), reverse=True):
+        url = a.get("url") or a.get("link")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            result.append(a)
+    
+    result = result[:max_articles]
+    logger.info(f"News: {len(newsapi_articles)} from NewsAPI, {len(iqair_articles)} from IQAir, {len(result)} total")
     return result
 
 # =========================
