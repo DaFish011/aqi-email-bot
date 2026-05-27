@@ -61,6 +61,8 @@ locations = [
     {"name": "Calamba, Laguna", "lat": 14.1919, "lon": 121.0711},
     {"name": "Biñan, Laguna",   "lat": 14.2769, "lon": 121.0589},
 ]
+TAAL_LAT  = 14.3568
+TAAL_LON  = 121.0064
 PH_OFFSET = timedelta(hours=8)
 
 # =========================
@@ -81,9 +83,9 @@ def get_aqi_level(v):
     elif v <= 200: return 4
     else:          return 5
 
-TAAL_LAT = 14.3568
-TAAL_LON = 121.0064
-
+# =========================
+# WIND / TAAL HELPERS
+# =========================
 def get_compass_direction(deg):
     if deg is None: return "N/A"
     try:
@@ -94,45 +96,26 @@ def get_compass_direction(deg):
         return "N/A"
 
 def get_bearing(lat1, lon1, lat2, lon2):
-    """Calculate bearing from point 1 to point 2"""
-    import math
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
     dlon = lon2 - lon1
     x = math.sin(dlon) * math.cos(lat2)
     y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     return (math.degrees(math.atan2(x, y)) + 360) % 360
 
-def get_taal_wind_info(loc_lat, loc_lon, wind_deg, wind_speed):
-    """
-    Returns dict with wind info relative to Taal
-    """
+def get_wind_message(loc_lat, loc_lon, wind_deg, wind_speed):
     compass = get_compass_direction(wind_deg)
-    
+    speed_str = f"{wind_speed} m/s" if wind_speed not in (None, "-") else ""
     if wind_deg is None:
-        return {"compass": "N/A", "message": "Wind direction unavailable"}
-
-    # Bearing FROM location TO Taal
+        return f"💨 Wind direction: N/A"
     bearing_to_taal = get_bearing(loc_lat, loc_lon, TAAL_LAT, TAAL_LON)
-    
-    # Wind blows FROM wind_deg direction
     wind_from = (float(wind_deg) + 180) % 360
     diff = abs(wind_from - bearing_to_taal)
     if diff > 180:
         diff = 360 - diff
-
-    towards_location = diff < 60
-
-    speed_str = f"{wind_speed} m/s" if wind_speed not in (None, "-") else ""
-
-    if towards_location:
-        message = f"Wind from Taal direction: {compass} ({speed_str})"
+    if diff < 60:
+        return f"💨 Wind from Taal direction: {compass} ({speed_str})"
     else:
-        message = f"Wind away from Taal direction: {compass} ({speed_str})"
-
-    return {
-        "compass": compass,
-        "message": message,
-    }
+        return f"💨 Wind away from Taal: {compass} ({speed_str})"
 
 # =========================
 # FETCH CURRENT AQI FROM IQAIR
@@ -144,7 +127,6 @@ def get_current_aqi(lat, lon):
         r.raise_for_status()
         data = r.json()
         if data.get("status") != "success":
-            logger.error(f"IQAir error: {data.get('data')}")
             return None
         pollution = data["data"]["current"]["pollution"]
         weather   = data["data"]["current"]["weather"]
@@ -172,80 +154,61 @@ NEWS_QUERIES = [
     '(Laguna OR Calamba) AND (wildfire OR "forest fire" OR smoke OR "open burning")',
 ]
 
-def _text(a):
-    return f"{a.get('title','')} {a.get('description','')}".lower()
-
-def _exclude(a):
-    return any(k in _text(a) for k in NEWS_EXCLUDE)
-
+def _text(a): return f"{a.get('title','')} {a.get('description','')}".lower()
+def _exclude(a): return any(k in _text(a) for k in NEWS_EXCLUDE)
 def _recent(a):
     try:
         dt = datetime.fromisoformat(a.get("publishedAt","").replace("Z","+00:00")) + PH_OFFSET
         return dt >= datetime.utcnow() + PH_OFFSET - timedelta(days=7)
-    except:
-        return False
+    except: return False
 
 def _score(a):
     t, score, tags = _text(a), 0, []
-    if any(x in t for x in ("taal","phivolcs","volcanic","eruption","ashfall")): score += 5; tags.append("🌋 Volcano/Taal")
-    if any(x in t for x in ("air quality","aqi","pollution","pm2.5","smog")):    score += 4; tags.append("🌫️ Air quality")
-    if any(x in t for x in ("haze","vog","smoke","wildfire","forest fire")):     score += 3; tags.append("🔥 Smoke/haze")
-    if any(x in t for x in ("laguna","calamba","binan")):                        score += 2; tags.append("📍 Laguna area")
+    if any(x in t for x in ("taal","phivolcs","volcanic","eruption","ashfall")): score+=5; tags.append("🌋 Volcano/Taal")
+    if any(x in t for x in ("air quality","aqi","pollution","pm2.5","smog")):    score+=4; tags.append("🌫️ Air quality")
+    if any(x in t for x in ("haze","vog","smoke","wildfire","forest fire")):     score+=3; tags.append("🔥 Smoke/haze")
+    if any(x in t for x in ("laguna","calamba","binan")):                        score+=2; tags.append("📍 Laguna area")
     return score, tags
 
 def get_news(max_articles=6):
     if not NEWS_API_KEY:
-        logger.warning("NEWS_API_KEY not set - skipping news")
+        logger.warning("NEWS_API_KEY not set")
         return []
     seen, scored = set(), []
     for q in NEWS_QUERIES:
         try:
-            r = requests.get(
-                "https://newsapi.org/v2/everything",
-                params={"q": q, "sortBy": "publishedAt", "language": "en", "apiKey": NEWS_API_KEY, "pageSize": 10},
-                timeout=10
-            )
+            r = requests.get("https://newsapi.org/v2/everything",
+                params={"q":q,"sortBy":"publishedAt","language":"en","apiKey":NEWS_API_KEY,"pageSize":10},
+                timeout=10)
             r.raise_for_status()
-            for a in r.json().get("articles", []):
+            for a in r.json().get("articles",[]):
                 link = a.get("url")
-                if not link or link in seen or _exclude(a) or not _recent(a):
-                    continue
+                if not link or link in seen or _exclude(a) or not _recent(a): continue
                 sc, tags = _score(a)
-                if sc < 2:
-                    continue
-                seen.add(link)
-                a["_score"] = sc
-                a["_tags"]  = tags
-                scored.append(a)
-        except Exception as e:
-            logger.error(f"News fetch error: {e}")
+                if sc < 2: continue
+                seen.add(link); a["_score"]=sc; a["_tags"]=tags; scored.append(a)
+        except Exception as e: logger.error(f"News error: {e}")
     result = sorted(scored, key=lambda x: x["_score"], reverse=True)[:max_articles]
-    logger.info(f"News: found {len(result)} articles")
+    logger.info(f"News: {len(result)} articles found")
     return result
 
 # =========================
-# FIREBASE DAILY AVERAGES
+# FIREBASE DAILY AVERAGES (always 30 days)
 # =========================
 def get_daily_averages(location_name):
-    """Always returns exactly 30 days. Missing days have aqi=None."""
     try:
-        data = db.reference(f"aqi_hourly/{location_name}").get()
-        
-        # Build list of last 30 days in PH time
+        data  = db.reference(f"aqi_hourly/{location_name}").get()
         today = (datetime.utcnow() + PH_OFFSET).date()
         result = []
         for i in range(29, -1, -1):
-            day = today - timedelta(days=i)
+            day      = today - timedelta(days=i)
             date_str = day.strftime("%Y-%m-%d")
-            
             if data and date_str in data:
                 vals = [v.get("aqi") for v in data[date_str].values() if v.get("aqi") is not None]
-                avg = round(sum(vals) / len(vals)) if vals else None
+                avg  = round(sum(vals) / len(vals)) if vals else None
             else:
                 avg = None
-            
             result.append({"date": date_str, "aqi": avg})
-        
         filled = sum(1 for d in result if d["aqi"] is not None)
         logger.info(f"{location_name}: {filled}/30 days have data")
         return result
@@ -254,24 +217,22 @@ def get_daily_averages(location_name):
         return []
 
 # =========================
-# BUILD BAR CHART
+# BUILD BAR CHART (always 30 days, gray for missing)
 # =========================
 def build_bar_chart_plotly(location_name, daily_data):
-    if not daily_data:
-        return None
+    if not daily_data: return None
     try:
         dates  = [d["date"] for d in daily_data]
-        values = [d["aqi"]  for d in daily_data]  # may contain None
+        values = [d["aqi"]  for d in daily_data]
 
-        # Saturday labels on x-axis only
+        # Saturday labels only
         x_labels = []
         for date_str in dates:
             dt = datetime.strptime(date_str, "%Y-%m-%d")
             x_labels.append(dt.strftime("%b %d") if dt.weekday() == 5 else "")
 
-        # Colors and text labels - gray for missing days
-        colors = []
-        labels = []
+        # Colors - gray for missing days
+        colors, labels = [], []
         for v in values:
             if v is not None:
                 colors.append(aqi_map[get_aqi_level(v)]["color"])
@@ -280,16 +241,14 @@ def build_bar_chart_plotly(location_name, daily_data):
                 colors.append("#e0e0e0")
                 labels.append("")
 
-        # Replace None with 0 for plotting
         plot_values = [v if v is not None else 0 for v in values]
-
         valid = [v for v in values if v is not None]
         max_y = max(valid) if valid else 100
         y_max = max_y + math.ceil(max_y * 0.15)
 
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            x=list(range(1, len(plot_values) + 1)),
+            x=list(range(1, 31)),
             y=plot_values,
             marker=dict(color=colors, line=dict(width=0)),
             text=labels,
@@ -297,38 +256,22 @@ def build_bar_chart_plotly(location_name, daily_data):
             textfont=dict(size=11, color="#c62828", family="Arial"),
             showlegend=False,
         ))
-        fig.add_hline(y=100, line=dict(color="rgba(211,47,47,0.35)", width=2, dash="dash"))
-
+        fig.add_hline(y=100, line=dict(color="rgba(211,47,47,0.3)", width=2.5, dash="dash"))
         fig.update_layout(
-            title=dict(
-                text=f"<b>{location_name} – 30-Day AQI History</b>",
-                font=dict(size=16, color="#333", family="Arial"),
-                x=0.5, xanchor="center"
-            ),
+            title=dict(text=f"<b>{location_name} – 30-Day AQI History</b>",
+                font=dict(size=16, color="#333", family="Arial"), x=0.5, xanchor="center"),
             xaxis=dict(
                 tickmode="array",
-                tickvals=list(range(1, len(plot_values) + 1)),
+                tickvals=list(range(1, 31)),
                 ticktext=x_labels,
                 tickfont=dict(size=10, color="#666", family="Arial"),
-                gridcolor="rgba(0,0,0,0.05)",
-                zeroline=False,
-            ),
-            yaxis=dict(
-                range=[0, y_max],
-                gridcolor="rgba(0,0,0,0.08)",
-                zeroline=False,
-                tickfont=dict(size=11, color="#666", family="Arial"),
-                side="right",
-                dtick=20,
-            ),
-            plot_bgcolor="rgba(250,250,250,0.6)",
-            paper_bgcolor="white",
-            margin=dict(l=80, r=80, t=80, b=60),
-            width=1000,
-            height=400,
+                gridcolor="rgba(0,0,0,0.05)", zeroline=False),
+            yaxis=dict(range=[0, y_max], gridcolor="rgba(0,0,0,0.08)", zeroline=False,
+                tickfont=dict(size=11, color="#666", family="Arial"), side="right", dtick=20),
+            plot_bgcolor="rgba(250,250,250,0.6)", paper_bgcolor="white",
+            margin=dict(l=80, r=80, t=80, b=60), width=1000, height=400,
         )
-
-        safe = location_name.replace(",", "").replace(" ", "_").lower().replace("ñ", "n")
+        safe = location_name.replace(",","").replace(" ","_").lower().replace("ñ","n")
         path = f"/tmp/{safe}_chart.png"
         fig.write_image(path)
         logger.info(f"Chart saved: {path}")
@@ -338,13 +281,11 @@ def build_bar_chart_plotly(location_name, daily_data):
         return None
 
 # =========================
-# BUILD LOCATION CARD HTML
+# BUILD LOCATION CARD HTML (exact 4:49 design + Taal wind)
 # =========================
 def build_card(loc, aqi_data):
     if not aqi_data:
-        return f"""<td width="50%" style="padding:8px; vertical-align:top;">
-  <p style="font-family:Arial,sans-serif; font-size:13px; color:#999;">No data for {html.escape(loc['name'])}</p>
-</td>"""
+        return f"<td width='50%' style='padding:8px;vertical-align:top;'><p style='color:#999;font-size:13px;'>No data available for {html.escape(loc['name'])}</p></td>"
 
     aqi_value      = aqi_data.get("aqi", 0)
     aqi_info       = aqi_map.get(get_aqi_level(aqi_value), aqi_map[3])
@@ -355,83 +296,74 @@ def build_card(loc, aqi_data):
     wind_deg       = aqi_data.get("wind_direction")
     color          = aqi_info["color"]
 
-    # Taal wind analysis
-    taal_info = get_taal_wind_info(loc["lat"], loc["lon"], wind_deg, wind_speed)
+    wind_message = get_wind_message(loc["lat"], loc["lon"], wind_deg, wind_speed)
 
     return f"""
-<td width="50%" style="padding:6px; vertical-align:top;">
+<td width="50%" style="padding: 8px; vertical-align: top;">
 
   <!-- Location label -->
-  <p style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333; margin:0 0 6px 0;">
+  <p style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333; margin:0 0 8px 0;">
     📍 {html.escape(loc['name'])}
   </p>
 
-  <!-- Card wrapper -->
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:8px; overflow:hidden; border:1px solid #e0e0e0; table-layout:fixed;">
+  <!-- Card -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px; overflow:hidden; border:1px solid #e0e0e0;">
 
     <!-- AQI Header -->
     <tr>
-      <td style="background-color:{color}; padding:10px 8px; border-radius:8px 8px 0 0;">
+      <td style="background-color:{color}; padding:16px; border-radius:10px 10px 0 0;">
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <!-- AQI number box -->
-            <td width="52" style="vertical-align:middle;">
-              <table cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.22); border-radius:6px; width:52px;">
-                <tr><td style="padding:6px 4px; text-align:center;">
-                  <div style="font-family:Arial,sans-serif; font-size:22px; font-weight:bold; color:white; line-height:1;">{aqi_value}</div>
-                  <div style="font-family:Arial,sans-serif; font-size:9px; color:white; margin-top:3px;">AQI</div>
+            <td width="64" style="vertical-align:middle;">
+              <table cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.22); border-radius:8px; width:64px;">
+                <tr><td style="padding:10px 8px; text-align:center;">
+                  <div style="font-family:Arial,sans-serif; font-size:30px; font-weight:bold; color:white; line-height:1;">{aqi_value}</div>
+                  <div style="font-family:Arial,sans-serif; font-size:10px; color:white; margin-top:4px;">AQI</div>
                 </td></tr>
               </table>
             </td>
-            <!-- Label + advice -->
-            <td style="padding-left:8px; vertical-align:middle;">
-              <div style="font-family:Arial,sans-serif; font-size:12px; font-weight:bold; color:white; margin-bottom:3px;">{aqi_info['label']}</div>
-              <div style="font-family:Arial,sans-serif; font-size:10px; color:white; line-height:1.3;">{aqi_info['advice']}</div>
+            <td style="padding-left:12px; vertical-align:middle;">
+              <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:white; margin-bottom:4px;">{aqi_info['label']}</div>
+              <div style="font-family:Arial,sans-serif; font-size:11px; color:white; opacity:0.95; line-height:1.4;">{aqi_info['advice']}</div>
             </td>
-            <!-- Emoji -->
-            <td width="28" style="vertical-align:middle; text-align:right; font-size:22px; padding-left:4px;">{aqi_info['emoji']}</td>
+            <td width="40" style="vertical-align:middle; text-align:right; font-size:30px; padding-left:8px;">{aqi_info['emoji']}</td>
           </tr>
         </table>
       </td>
     </tr>
 
-    <!-- Card Body -->
+    <!-- Body -->
     <tr>
-      <td width="100%" style="background-color:#ffffff; padding:10px 8px;">
+      <td style="background-color:#ffffff; padding:14px 16px;">
 
         <!-- Main pollutant -->
-        <p style="font-family:Arial,sans-serif; font-size:10px; color:#555; margin:0 0 8px 0;">
-          Main: <strong>{main_pollutant}</strong>
+        <p style="font-family:Arial,sans-serif; font-size:12px; color:#555; margin:0 0 10px 0;">
+          Main pollutant: <strong>{main_pollutant}</strong>
         </p>
 
-        <!-- Wind Info -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
-          <tr>
-            <td width="100%" style="background:#f5f5f5; border-left:3px solid #bdbdbd; padding:6px 8px; border-radius:0 4px 4px 0;">
-              <div style="font-family:Arial,sans-serif; font-size:9px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:2px;">
-                💨 Wind
-              </div>
-              <div style="font-family:Arial,sans-serif; font-size:10px; color:#555; line-height:1.4;">
-                {html.escape(taal_info['message'])}
-              </div>
-            </td>
-          </tr>
+        <!-- Wind info (Taal-aware) -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5; border-left:3px solid #bdbdbd; border-radius:0 4px 4px 0; margin-bottom:12px;">
+          <tr><td style="padding:8px 10px;">
+            <span style="font-family:Arial,sans-serif; font-size:11px; color:#555;">
+              {html.escape(wind_message)}
+            </span>
+          </td></tr>
         </table>
 
         <!-- Weather stats -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eeeeee; border-radius:4px; overflow:hidden;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f0f0f0; border-radius:6px; overflow:hidden;">
           <tr>
-            <td width="33%" style="padding:6px 4px; text-align:center; background:#fafafa; border-right:1px solid #eeeeee;">
-              <div style="font-family:Arial,sans-serif; font-size:9px; color:#aaa; margin-bottom:2px;">Temp</div>
-              <div style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333;">{temp}°C</div>
+            <td width="33%" style="padding:10px 6px; text-align:center; background:#f9f9f9; border-right:1px solid #f0f0f0;">
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:#888; margin-bottom:4px;">Temperature</div>
+              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{temp}°C</div>
             </td>
-            <td width="34%" style="padding:6px 4px; text-align:center; background:#fafafa; border-right:1px solid #eeeeee;">
-              <div style="font-family:Arial,sans-serif; font-size:9px; color:#aaa; margin-bottom:2px;">Wind</div>
-              <div style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333;">{wind_speed}m/s</div>
+            <td width="34%" style="padding:10px 6px; text-align:center; background:#f9f9f9; border-right:1px solid #f0f0f0;">
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:#888; margin-bottom:4px;">Wind Speed</div>
+              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{wind_speed} m/s</div>
             </td>
-            <td width="33%" style="padding:6px 4px; text-align:center; background:#fafafa;">
-              <div style="font-family:Arial,sans-serif; font-size:9px; color:#aaa; margin-bottom:2px;">Humidity</div>
-              <div style="font-family:Arial,sans-serif; font-size:11px; font-weight:bold; color:#333;">{humidity}%</div>
+            <td width="33%" style="padding:10px 6px; text-align:center; background:#f9f9f9;">
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:#888; margin-bottom:4px;">Humidity</div>
+              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{humidity}%</div>
             </td>
           </tr>
         </table>
@@ -458,20 +390,20 @@ def build_html_email():
 <body style="margin:0; padding:10px; background-color:#f5f5f5; font-family:Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0">
 <tr><td align="center">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1); table-layout:fixed;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:900px; background-color:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
 
   <!-- Header -->
   <tr>
     <td style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); padding:32px 20px; text-align:center;">
-      <div style="font-size:30px; font-weight:bold; color:white; margin-bottom:6px;">🌍 Air Quality Report</div>
-      <div style="font-size:14px; color:white;">Weekly AQI Summary</div>
+      <div style="font-family:Arial,sans-serif; font-size:30px; font-weight:bold; color:white; margin-bottom:6px;">🌍 Air Quality Report</div>
+      <div style="font-family:Arial,sans-serif; font-size:14px; color:white; opacity:0.95;">Weekly AQI Summary</div>
     </td>
   </tr>
 
-  <!-- Location Cards -->
+  <!-- Cards -->
   <tr>
     <td style="padding:20px;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;">
+      <table width="100%" cellpadding="0" cellspacing="0">
         <tr>
 """
     for loc in locations:
@@ -490,12 +422,11 @@ def build_html_email():
 
     for loc in locations:
         daily = get_daily_averages(loc["name"])
-        safe = loc["name"].replace(",", "").replace(" ", "_").lower().replace("ñ", "n")
-        cid  = f"{safe}_chart"
-        path = build_bar_chart_plotly(loc["name"], daily)
+        safe  = loc["name"].replace(",","").replace(" ","_").lower().replace("ñ","n")
+        cid   = f"{safe}_chart"
+        path  = build_bar_chart_plotly(loc["name"], daily)
         if path:
             html_content += f"""
-  <!-- Chart: {loc['name']} -->
   <tr>
     <td style="padding:0 20px 20px 20px;">
       <div style="border-left:4px solid #667eea; padding-left:14px; margin-bottom:10px;">
@@ -511,13 +442,11 @@ def build_html_email():
     # News
     news_articles = get_news()
     html_content += """
-  <!-- News -->
   <tr>
     <td style="padding:0 20px 20px 20px;">
       <table width="100%" cellpadding="0" cellspacing="0" style="border-left:4px solid #ff6f00; border-radius:0 8px 8px 0; background:#fff3e0;">
-        <tr>
-          <td style="padding:16px;">
-            <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:#ff6f00; margin-bottom:12px;">📰 This Week's Headlines</div>
+        <tr><td style="padding:16px;">
+          <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:#ff6f00; margin-bottom:12px;">📰 This Week's Headlines</div>
 """
     if news_articles:
         for a in news_articles:
@@ -525,25 +454,21 @@ def build_html_email():
             desc   = html.escape(a.get("description") or "")
             url    = html.escape(a.get("url") or "#", quote=True)
             source = html.escape((a.get("source") or {}).get("name", "Unknown"))
-            tags   = " · ".join(a.get("_tags", []))
             html_content += f"""
-            <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #ffe0b2; margin-bottom:12px; padding-bottom:12px;">
-              <tr><td>
-                <div style="font-family:Arial,sans-serif; font-size:11px; color:#e65100; margin-bottom:4px;">{html.escape(tags)}</div>
-                <a href="{url}" style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#ff6f00; text-decoration:none;">{title}</a><br>
-                <span style="font-family:Arial,sans-serif; font-size:11px; color:#999;">{source}</span><br>
-                <span style="font-family:Arial,sans-serif; font-size:12px; color:#333;">{desc}</span>
-              </td></tr>
-            </table>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #ffe0b2; margin-bottom:12px; padding-bottom:12px;">
+            <tr><td>
+              <a href="{url}" style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#ff6f00; text-decoration:none;">{title}</a><br>
+              <span style="font-family:Arial,sans-serif; font-size:11px; color:#999;">{source}</span><br>
+              <span style="font-family:Arial,sans-serif; font-size:12px; color:#333;">{desc}</span>
+            </td></tr>
+          </table>
 """
     else:
         html_content += """
-            <p style="font-family:Arial,sans-serif; font-size:13px; color:#999; margin:0;">No relevant headlines found this week.</p>
+          <p style="font-family:Arial,sans-serif; font-size:13px; color:#999; margin:0;">No relevant headlines found this week.</p>
 """
-
     html_content += """
-          </td>
-        </tr>
+        </td></tr>
       </table>
     </td>
   </tr>
@@ -596,7 +521,7 @@ def send_email():
             server.sendmail(SENDER, RECEIVERS, msg.as_string())
         logger.info("Email sent successfully!")
     except smtplib.SMTPAuthenticationError:
-        logger.error("SMTP auth failed - check EMAIL_USER and EMAIL_PASS")
+        logger.error("SMTP auth failed")
     except Exception as e:
         logger.error(f"Send error: {e}")
 
