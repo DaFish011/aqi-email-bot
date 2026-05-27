@@ -7,7 +7,6 @@ from email import encoders
 import os
 import logging
 import math
-import json
 import html
 import firebase_admin
 from firebase_admin import db, credentials
@@ -72,515 +71,367 @@ PH_OFFSET = timedelta(hours=8)
 # AQI LABELS & COLORS
 # =========================
 aqi_map = {
-    1: {"label": "Good", "color": "#43a047", "advice": "Air quality is satisfactory.", "emoji": "😊"},
-    2: {"label": "Fair", "color": "#fbc02d", "advice": "Air quality is acceptable.", "emoji": "🙂"},
-    3: {"label": "Moderate", "color": "#fb8c00", "advice": "Sensitive groups should limit outdoor activity.", "emoji": "⚠️"},
-    4: {"label": "Poor", "color": "#e53935", "advice": "Everyone should reduce prolonged outdoor activity.", "emoji": "😷"},
-    5: {"label": "Very Poor", "color": "#6a1b9a", "advice": "Avoid outdoor activity. Wear N95 masks if necessary.", "emoji": "🚫"}
+    1: {"label": "Good",      "color": "#43a047", "advice": "Air quality is satisfactory.",                          "emoji": "😊"},
+    2: {"label": "Fair",      "color": "#fbc02d", "advice": "Air quality is acceptable.",                            "emoji": "🙂"},
+    3: {"label": "Moderate",  "color": "#fb8c00", "advice": "Sensitive groups should limit outdoor activity.",       "emoji": "⚠️"},
+    4: {"label": "Poor",      "color": "#e53935", "advice": "Everyone should reduce prolonged outdoor activity.",    "emoji": "😷"},
+    5: {"label": "Very Poor", "color": "#6a1b9a", "advice": "Avoid outdoor activity. Wear N95 masks if necessary.", "emoji": "🚫"},
 }
 
-# =========================
-# AQI LEVEL FROM VALUE
-# =========================
-def get_aqi_level(aqi_value):
-    if aqi_value <= 50:
-        return 1
-    elif aqi_value <= 100:
-        return 2
-    elif aqi_value <= 150:
-        return 3
-    elif aqi_value <= 200:
-        return 4
-    else:
-        return 5
+def get_aqi_level(v):
+    if v <= 50:   return 1
+    elif v <= 100: return 2
+    elif v <= 150: return 3
+    elif v <= 200: return 4
+    else:          return 5
 
-# =========================
-# COMPASS DIRECTION
-# =========================
-def get_compass_direction(wind_deg):
-    """Convert wind degree to compass direction"""
-    if wind_deg is None or wind_deg == "-":
-        return "N/A"
+def get_compass_direction(deg):
+    if deg is None: return "N/A"
     try:
-        degree = float(wind_deg)
-        directions = ["North", "NNE", "Northeast", "ENE", "East", "ESE", "Southeast", "SSE",
-                      "South", "SSW", "Southwest", "WSW", "West", "WNW", "Northwest", "NNW"]
-        index = round(degree / 22.5) % 16
-        return directions[index]
-    except (ValueError, TypeError):
-        return "N/A"
+        dirs = ["North","NNE","Northeast","ENE","East","ESE","Southeast","SSE",
+                "South","SSW","Southwest","WSW","West","WNW","Northwest","NNW"]
+        return dirs[round(float(deg) / 22.5) % 16]
+    except: return "N/A"
 
 # =========================
 # FETCH CURRENT AQI FROM IQAIR
 # =========================
 def get_current_aqi(lat, lon):
-    """Fetch current AQI from IQAir"""
     try:
         url = f"http://api.airvisual.com/v2/nearest_city?lat={lat}&lon={lon}&key={IQAIR_API_KEY}"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
         if data.get("status") != "success":
-            logger.error(f"IQAir API error: {data.get('data')}")
             return None
-        
         pollution = data["data"]["current"]["pollution"]
-        weather = data["data"]["current"]["weather"]
-        
-        # Map main pollutant code to name
-        pollutant_map = {"p1": "PM10", "p2": "PM2.5", "o3": "O3", "n2": "NO2"}
-        main_pollutant = pollutant_map.get(pollution.get("mainus"), pollution.get("mainus", "N/A"))
-        
+        weather   = data["data"]["current"]["weather"]
+        pm = {"p1": "PM10", "p2": "PM2.5", "o3": "O3", "n2": "NO2"}
         return {
-            "aqi": pollution.get("aqius"),
-            "main_pollutant": main_pollutant,
-            "temperature": weather.get("tp"),
-            "humidity": weather.get("hu"),
+            "aqi":            pollution.get("aqius"),
+            "main_pollutant": pm.get(pollution.get("mainus"), pollution.get("mainus","N/A")),
+            "temperature":    weather.get("tp"),
+            "humidity":       weather.get("hu"),
             "wind_direction": weather.get("wd"),
-            "wind_speed": round(weather.get("ws", 0), 2)
+            "wind_speed":     round(weather.get("ws", 0), 2),
         }
     except Exception as e:
-        logger.error(f"Failed to fetch current AQI: {e}")
+        logger.error(f"IQAir fetch failed: {e}")
         return None
 
 # =========================
 # NEWS
 # =========================
-NEWS_EXCLUDE_KEYWORDS = [
-    "pypi", "mcp", "data-mcp", "software", "stock market", "crypto",
-    "football", "basketball", "celebrity", "k-pop", "recipe", "horoscope",
-]
-
-NEWS_SEARCH_QUERIES = [
-    '(Calamba OR Biñan OR Binan) AND ("air quality" OR pollution OR haze OR smog OR "air pollution")',
-    '(Laguna province) AND ("air quality" OR pollution OR haze OR smog OR ashfall)',
+NEWS_EXCLUDE = ["pypi","mcp","software","stock market","crypto","football","basketball","celebrity","k-pop","recipe","horoscope"]
+NEWS_QUERIES = [
+    '(Calamba OR Biñan OR Binan) AND ("air quality" OR pollution OR haze OR smog)',
+    '(Laguna province) AND ("air quality" OR pollution OR haze OR ashfall)',
     '(Taal OR "Taal Volcano") AND (eruption OR alert OR ash OR activity OR PHIVOLCS)',
     '(Laguna OR Calamba OR Biñan) AND (wildfire OR "forest fire" OR smoke OR "open burning")',
 ]
 
-def _article_text(article):
-    title = article.get("title") or ""
-    desc = article.get("description") or ""
-    return f"{title} {desc}".lower()
-
-def _should_exclude_article(article):
-    text = _article_text(article)
-    return any(kw in text for kw in NEWS_EXCLUDE_KEYWORDS)
-
-def _is_within_week(article_date_str):
+def _text(a): return f"{a.get('title','')} {a.get('description','')}".lower()
+def _exclude(a): return any(k in _text(a) for k in NEWS_EXCLUDE)
+def _recent(a):
     try:
-        article_date = datetime.fromisoformat(article_date_str.replace("Z", "+00:00"))
-        article_date_ph = article_date + PH_OFFSET
-        now_ph = datetime.utcnow() + PH_OFFSET
-        one_week_ago = now_ph - timedelta(days=7)
-        return article_date_ph >= one_week_ago
-    except (ValueError, TypeError):
-        logger.warning(f"Could not parse article date: {article_date_str}")
-        return False
+        dt = datetime.fromisoformat(a.get("publishedAt","").replace("Z","+00:00")) + PH_OFFSET
+        return dt >= datetime.utcnow() + PH_OFFSET - timedelta(days=7)
+    except: return False
 
-def _score_and_tag_article(article):
-    text = _article_text(article)
-    score = 0
-    tags = []
-
-    if any(t in text for t in ("taal", "phivolcs", "volcanic ash", "volcano", "eruption", "ashfall", "ash fall", "volcanic activity")):
-        score += 5
-        tags.append("🌋 Volcano / Taal")
-
-    if any(t in text for t in ("air quality", "aqi", "pollution", "pm2.5", "pm10", "smog", "particulate")):
-        score += 4
-        tags.append("🌫️ Air quality")
-
-    if any(t in text for t in ("haze", "vog", "smoke", "wildfire", "forest fire", "open burning")):
-        score += 3
-        tags.append("🔥 Smoke / haze")
-
-    if any(t in text for t in ("laguna", "calamba", "biñan", "binan")):
-        score += 2
-        tags.append("📍 Laguna / Calamba / Biñan")
-
+def _score(a):
+    t, score, tags = _text(a), 0, []
+    if any(x in t for x in ("taal","phivolcs","volcanic","eruption","ashfall")): score+=5; tags.append("🌋 Volcano/Taal")
+    if any(x in t for x in ("air quality","aqi","pollution","pm2.5","smog")):    score+=4; tags.append("🌫️ Air quality")
+    if any(x in t for x in ("haze","vog","smoke","wildfire","forest fire")):     score+=3; tags.append("🔥 Smoke/haze")
+    if any(x in t for x in ("laguna","calamba","biñan","binan")):                score+=2; tags.append("📍 Laguna area")
     return score, tags
 
-def get_air_quality_news(max_articles=6):
-    if not NEWS_API_KEY:
-        logger.warning("NEWS_API_KEY not set. Skipping news fetch.")
-        return []
-
-    url = "https://newsapi.org/v2/everything"
-    seen_urls = set()
-    scored = []
-
-    for query in NEWS_SEARCH_QUERIES:
+def get_news(max_articles=6):
+    if not NEWS_API_KEY: return []
+    seen, scored = set(), []
+    for q in NEWS_QUERIES:
         try:
-            params = {
-                "q": query,
-                "sortBy": "publishedAt",
-                "language": "en",
-                "apiKey": NEWS_API_KEY,
-                "pageSize": 10,
-            }
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            articles = response.json().get("articles", [])
-        except RequestException as e:
-            logger.error(f"News API request failed for query '{query[:40]}...': {e}")
-            continue
-
-        for article in articles:
-            link = article.get("url")
-            if not link or link in seen_urls:
-                continue
-            if _should_exclude_article(article):
-                continue
-            if not _is_within_week(article.get("publishedAt", "")):
-                continue
-            relevance, tags = _score_and_tag_article(article)
-            if relevance < 2:
-                continue
-            seen_urls.add(link)
-            article["_news_score"] = relevance
-            article["_news_tags"] = tags
-            scored.append(article)
-
-    scored.sort(key=lambda a: a["_news_score"], reverse=True)
-    return scored[:max_articles]
-
-def _has_elevated_aqi(fetched_aqi):
-    for data in fetched_aqi.values():
-        if not data:
-            continue
-        if data.get("aqi", 0) > 100:
-            return True
-    return False
+            r = requests.get("https://newsapi.org/v2/everything", params={"q":q,"sortBy":"publishedAt","language":"en","apiKey":NEWS_API_KEY,"pageSize":10}, timeout=10)
+            r.raise_for_status()
+            for a in r.json().get("articles",[]):
+                link = a.get("url")
+                if not link or link in seen or _exclude(a) or not _recent(a): continue
+                sc, tags = _score(a)
+                if sc < 2: continue
+                seen.add(link); a["_score"]=sc; a["_tags"]=tags; scored.append(a)
+        except Exception as e: logger.error(f"News error: {e}")
+    return sorted(scored, key=lambda x: x["_score"], reverse=True)[:max_articles]
 
 # =========================
-# GET DAILY AVERAGES FROM HOURLY DATA
+# FIREBASE DAILY AVERAGES
 # =========================
 def get_daily_averages(location_name):
-    """Fetch hourly data and calculate daily averages for past 30 days"""
     try:
-        ref = db.reference(f"aqi_hourly/{location_name}")
-        hourly_data = ref.get()
-        
-        if not hourly_data:
-            logger.warning(f"No hourly data for {location_name}")
-            return []
-        
-        daily_averages = []
-        for date_str in sorted(hourly_data.keys()):
-            hourly_readings = hourly_data[date_str]
-            aqi_values = [v.get("aqi") for v in hourly_readings.values() if v.get("aqi") is not None]
-            
-            if aqi_values:
-                avg_aqi = round(sum(aqi_values) / len(aqi_values))
-                daily_averages.append({"date": date_str, "aqi": avg_aqi})
-                logger.info(f"Daily avg: {location_name} | {date_str} | AQI: {avg_aqi} (from {len(aqi_values)} readings)")
-        
-        logger.info(f"Loaded {len(daily_averages)} days for {location_name}")
-        return daily_averages
+        data = db.reference(f"aqi_hourly/{location_name}").get()
+        if not data: return []
+        result = []
+        for date_str in sorted(data.keys()):
+            vals = [v.get("aqi") for v in data[date_str].values() if v.get("aqi") is not None]
+            if vals:
+                result.append({"date": date_str, "aqi": round(sum(vals)/len(vals))})
+        logger.info(f"{location_name}: {len(result)} days loaded")
+        return result
     except Exception as e:
-        logger.error(f"Failed to fetch daily averages for {location_name}: {e}")
+        logger.error(f"Firebase error for {location_name}: {e}")
         return []
 
 # =========================
 # BUILD BAR CHART
 # =========================
 def build_bar_chart_plotly(location_name, daily_data):
-    """Build bar chart from daily averages"""
-    if not daily_data or len(daily_data) == 0:
-        logger.warning(f"No data for {location_name} chart")
-        return None
-    
+    if not daily_data: return None
     try:
-        logger.info(f"Building chart for {location_name}")
-        
         values = [d["aqi"] for d in daily_data]
-        all_valid = [v for v in values if v is not None]
-        max_y = max(all_valid) if all_valid else 100
-        y_max = max_y + math.ceil(max_y * 0.15)
-
-        day_numbers = list(range(1, len(values) + 1))
-        
-        colors = []
-        text_labels = []
-        for v in values:
-            if v is not None:
-                color = aqi_map[get_aqi_level(v)]["color"]
-                text = str(int(v)) if v > 100 else ""
-            else:
-                color = "#ccc"
-                text = ""
-            colors.append(color)
-            text_labels.append(text)
+        max_y  = max(values) if values else 100
+        y_max  = max_y + math.ceil(max_y * 0.15)
+        colors = [aqi_map[get_aqi_level(v)]["color"] for v in values]
+        labels = [str(v) if v > 100 else "" for v in values]
 
         fig = go.Figure()
-
         fig.add_trace(go.Bar(
-            x=day_numbers,
-            y=values,
+            x=list(range(1, len(values)+1)), y=values,
             marker=dict(color=colors, line=dict(width=0)),
-            text=text_labels,
-            textposition="outside",
+            text=labels, textposition="outside",
             textfont=dict(size=11, color="#c62828", family="Arial"),
-            hovertemplate="<b>Day %{x}</b><br>AQI: %{y}<extra></extra>",
-            showlegend=False
+            showlegend=False,
         ))
-
-        fig.add_hline(
-            y=100,
-            line=dict(color="rgba(211, 47, 47, 0.3)", width=2.5, dash="dash"),
-            name="Threshold (100)"
-        )
-
+        fig.add_hline(y=100, line=dict(color="rgba(211,47,47,0.3)", width=2.5, dash="dash"))
         fig.update_layout(
-            title=dict(
-                text=f"<b>{location_name} - 30-Day AQI History</b>",
-                font=dict(size=16, color="#333", family="Arial"),
-                x=0.5,
-                xanchor="center"
-            ),
-            xaxis=dict(
-                title=None,
-                tickfont=dict(size=11, color="#666", family="Arial"),
-                gridcolor="rgba(0,0,0,0.05)",
-                showgrid=True,
-                zeroline=False
-            ),
-            yaxis=dict(
-                title=None,
-                range=[0, y_max],
-                gridcolor="rgba(0,0,0,0.08)",
-                zeroline=False,
-                tickfont=dict(size=11, color="#666", family="Arial"),
-                side="right",
-                dtick=20
-            ),
-            plot_bgcolor="rgba(250,250,250,0.6)",
-            paper_bgcolor="white",
-            margin=dict(l=80, r=80, t=80, b=60),
-            width=1000,
-            height=400,
-            showlegend=True,
-            hovermode="x unified",
-            font=dict(family="Arial", size=11, color="#333")
+            title=dict(text=f"<b>{location_name} – 30-Day AQI History</b>", font=dict(size=16,color="#333",family="Arial"), x=0.5, xanchor="center"),
+            xaxis=dict(tickfont=dict(size=11,color="#666",family="Arial"), gridcolor="rgba(0,0,0,0.05)", zeroline=False),
+            yaxis=dict(range=[0, y_max], gridcolor="rgba(0,0,0,0.08)", zeroline=False, tickfont=dict(size=11,color="#666",family="Arial"), side="right", dtick=20),
+            plot_bgcolor="rgba(250,250,250,0.6)", paper_bgcolor="white",
+            margin=dict(l=80,r=80,t=80,b=60), width=1000, height=400,
         )
-
-        safe_name = location_name.replace(",", "").replace(" ", "_").lower()
-        filepath = f"/tmp/{safe_name}_chart.png"
-        fig.write_image(filepath)
-        
-        logger.info(f"Chart saved: {filepath}")
-        return filepath
-
+        safe = location_name.replace(",","").replace(" ","_").lower()
+        path = f"/tmp/{safe}_chart.png"
+        fig.write_image(path)
+        logger.info(f"Chart saved: {path}")
+        return path
     except Exception as e:
-        logger.error(f"Failed to generate chart for {location_name}: {e}", exc_info=True)
+        logger.error(f"Chart error for {location_name}: {e}")
         return None
+
+# =========================
+# BUILD LOCATION CARD HTML
+# =========================
+def build_card(loc, aqi_data):
+    if not aqi_data:
+        return f"<td width='50%' style='padding:8px;vertical-align:top;'><p style='color:#999;font-size:13px;'>No data available for {html.escape(loc['name'])}</p></td>"
+
+    aqi_value      = aqi_data.get("aqi", 0)
+    aqi_info       = aqi_map.get(get_aqi_level(aqi_value), aqi_map[3])
+    main_pollutant = aqi_data.get("main_pollutant", "N/A")
+    temp           = aqi_data.get("temperature", "-")
+    humidity       = aqi_data.get("humidity", "-")
+    wind_speed     = aqi_data.get("wind_speed", "-")
+    wind_compass   = get_compass_direction(aqi_data.get("wind_direction"))
+    color          = aqi_info["color"]
+
+    return f"""
+<td width="50%" style="padding: 8px; vertical-align: top;">
+
+  <!-- Location label -->
+  <p style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333; margin:0 0 8px 0;">
+    📍 {html.escape(loc['name'])}
+  </p>
+
+  <!-- Card -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px; overflow:hidden; border:1px solid #e0e0e0;">
+
+    <!-- AQI Header -->
+    <tr>
+      <td style="background-color:{color}; padding:16px; border-radius:10px 10px 0 0;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <!-- AQI number box -->
+            <td width="64" style="vertical-align:middle;">
+              <table cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.22); border-radius:8px; width:64px;">
+                <tr><td style="padding:10px 8px; text-align:center;">
+                  <div style="font-family:Arial,sans-serif; font-size:30px; font-weight:bold; color:white; line-height:1;">{aqi_value}</div>
+                  <div style="font-family:Arial,sans-serif; font-size:10px; color:white; margin-top:4px;">AQI</div>
+                </td></tr>
+              </table>
+            </td>
+            <!-- Label + advice -->
+            <td style="padding-left:12px; vertical-align:middle;">
+              <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:white; margin-bottom:4px;">{aqi_info['label']}</div>
+              <div style="font-family:Arial,sans-serif; font-size:11px; color:white; opacity:0.95; line-height:1.4;">{aqi_info['advice']}</div>
+            </td>
+            <!-- Emoji -->
+            <td width="40" style="vertical-align:middle; text-align:right; font-size:30px; padding-left:8px;">{aqi_info['emoji']}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Body -->
+    <tr>
+      <td style="background-color:#ffffff; padding:14px 16px;">
+
+        <!-- Main pollutant -->
+        <p style="font-family:Arial,sans-serif; font-size:12px; color:#555; margin:0 0 10px 0;">
+          Main pollutant: <strong>{main_pollutant}</strong>
+        </p>
+
+        <!-- Wind info -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#e8f4fd; border-left:3px solid #1976d2; border-radius:0 4px 4px 0; margin-bottom:12px;">
+          <tr><td style="padding:8px 10px;">
+            <span style="font-family:Arial,sans-serif; font-size:11px; color:#1565c0;">
+              💨 Wind direction: <strong>{wind_compass}</strong>
+            </span>
+          </td></tr>
+        </table>
+
+        <!-- Weather stats -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f0f0f0; border-radius:6px; overflow:hidden;">
+          <tr>
+            <td width="33%" style="padding:10px 6px; text-align:center; background:#f9f9f9; border-right:1px solid #f0f0f0;">
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:#888; margin-bottom:4px;">Temperature</div>
+              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{temp}°C</div>
+            </td>
+            <td width="34%" style="padding:10px 6px; text-align:center; background:#f9f9f9; border-right:1px solid #f0f0f0;">
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:#888; margin-bottom:4px;">Wind Speed</div>
+              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{wind_speed} m/s</div>
+            </td>
+            <td width="33%" style="padding:10px 6px; text-align:center; background:#f9f9f9;">
+              <div style="font-family:Arial,sans-serif; font-size:10px; color:#888; margin-bottom:4px;">Humidity</div>
+              <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{humidity}%</div>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+
+  </table>
+</td>
+"""
 
 # =========================
 # BUILD HTML EMAIL
 # =========================
 def build_html_email():
+    # Fetch data
+    location_data = {loc["name"]: get_current_aqi(loc["lat"], loc["lon"]) for loc in locations}
+
+    # Header
     html_content = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5; padding: 10px; }
-.container { max-width: 1200px; margin: 0 auto; background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-.header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; }
-.header h1 { font-size: 28px; font-weight: 600; margin-bottom: 5px; }
-.header p { font-size: 14px; opacity: 0.95; }
-.content { padding: 15px; }
-.cards-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 25px; }
-.location-label { font-size: 12px; font-weight: 600; color: #333; margin-bottom: 8px; padding: 0 3px; }
-.aqi-card { border-left: 4px solid #667eea; border-radius: 8px; overflow: hidden; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.aqi-header { padding: 12px; color: white; display: flex; gap: 10px; align-items: flex-start; }
-.aqi-box { background: rgba(255,255,255,0.2); border-radius: 6px; padding: 8px; text-align: center; min-width: 60px; flex-shrink: 0; }
-.aqi-value { font-size: 28px; font-weight: 700; line-height: 1; }
-.aqi-label { font-size: 10px; margin-top: 3px; }
-.aqi-text { flex: 1; min-width: 0; }
-.aqi-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; line-height: 1.2; }
-.aqi-advice { font-size: 11px; opacity: 0.95; line-height: 1.3; }
-.aqi-emoji { font-size: 32px; line-height: 1; flex-shrink: 0; }
-.aqi-body { padding: 10px 12px; }
-.aqi-info { font-size: 11px; color: #666; margin-bottom: 8px; }
-.wind-message { background-color: #e3f2fd; border-left: 3px solid #1976d2; padding: 8px; border-radius: 4px; font-size: 11px; color: #1565c0; margin-bottom: 8px; }
-.weather-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
-.weather-table td { padding: 6px 4px; text-align: center; border: 1px solid #f0f0f0; background-color: #f9f9f9; font-size: 10px; }
-.weather-label { color: #888; font-weight: 500; font-size: 9px; }
-.weather-value { font-weight: 600; color: #333; margin-top: 2px; font-size: 11px; }
-.divider { height: 1px; background-color: #e0e0e0; margin: 25px 0; }
-.charts { padding: 0; }
-.chart-section { margin-bottom: 25px; padding: 20px; }
-.chart-title { font-size: 16px; font-weight: 600; color: #333; margin-bottom: 5px; }
-.chart-subtitle { font-size: 12px; color: #888; margin-bottom: 12px; }
-.chart-img { width: 100%; height: auto; border-radius: 6px; border: 1px solid #e0e0e0; }
-.news-section { margin: 25px 20px 0 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 8px; }
-.news-title { color: #ff6f00; margin: 0 0 8px 0; font-size: 16px; font-weight: 600; }
-.news-article { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #ffe0b2; }
-.news-article:last-child { border-bottom: none; }
-.news-article a { color: #ff6f00; text-decoration: none; font-weight: 600; font-size: 13px; }
-.news-source { font-size: 11px; color: #999; display: inline; }
-.news-desc { font-size: 12px; color: #333; margin: 4px 0 0 0; }
-.footer { background-color: #f5f5f5; padding: 15px 20px; text-align: center; font-size: 11px; color: #999; border-top: 1px solid #e0e0e0; }
-</style>
 </head>
-<body>
-<div class="container">
-    <div class="header">
-        <h1>🌍 Air Quality Report</h1>
-        <p>Weekly AQI Summary</p>
-    </div>
-    <div class="content">
+<body style="margin:0; padding:10px; background-color:#f5f5f5; font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td align="center">
+<table width="900" cellpadding="0" cellspacing="0" style="background-color:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); padding:32px 20px; text-align:center;">
+      <div style="font-size:30px; font-weight:bold; color:white; margin-bottom:6px;">🌍 Air Quality Report</div>
+      <div style="font-size:14px; color:white; opacity:0.95;">Weekly AQI Summary</div>
+    </td>
+  </tr>
+
+  <!-- Cards -->
+  <tr>
+    <td style="padding:20px;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
 """
 
-    # Fetch current AQI for both locations
-    fetched_aqi = {}
-    location_data = {}
-    
+    # Build cards
     for loc in locations:
-        aqi_data = get_current_aqi(loc["lat"], loc["lon"])
-        fetched_aqi[loc["name"]] = aqi_data
-        location_data[loc["name"]] = aqi_data
-        
-        if not aqi_data:
-            logger.warning(f"No AQI data for {loc['name']}")
-    
-    # Build AQI cards (2 columns)
-    html_content += '<div class="cards-wrapper">'
-    
-    for loc in locations:
-        aqi_data = location_data.get(loc["name"])
-        if not aqi_data:
-            continue
-        
-        aqi_value = aqi_data.get("aqi", 0)
-        aqi_level = get_aqi_level(aqi_value)
-        aqi_info = aqi_map.get(aqi_level, aqi_map[3])
-        main_pollutant = aqi_data.get("main_pollutant", "N/A")
-        temp = aqi_data.get("temperature", "-")
-        humidity = aqi_data.get("humidity", "-")
-        wind_direction = aqi_data.get("wind_direction", "-")
-        wind_speed = aqi_data.get("wind_speed", "-")
-        wind_compass = get_compass_direction(wind_direction)
-        
-        html_content += f"""
-        <div>
-            <div class="location-label">📍 {html.escape(loc['name'])}</div>
-            <div class="aqi-card" style="border-left-color: {aqi_info['color']};">
-                <div class="aqi-header" style="background-color: {aqi_info['color']};">
-                    <div class="aqi-box">
-                        <div class="aqi-value">{aqi_value}</div>
-                        <div class="aqi-label">AQI</div>
-                    </div>
-                    <div class="aqi-text">
-                        <div class="aqi-title">{aqi_info['label']}</div>
-                        <div class="aqi-advice">{aqi_info['advice']}</div>
-                    </div>
-                    <div class="aqi-emoji">{aqi_info['emoji']}</div>
-                </div>
-                <div class="aqi-body">
-                    <div class="aqi-info"><strong>Main: {main_pollutant}</strong></div>
-                    <div class="wind-message">💨 Wind direction: {wind_compass}</div>
-                    <table class="weather-table">
-                        <tr>
-                            <td>
-                                <div class="weather-label">Temperature</div>
-                                <div class="weather-value">{temp}°C</div>
-                            </td>
-                            <td>
-                                <div class="weather-label">Wind Speed</div>
-                                <div class="weather-value">{wind_speed} m/s</div>
-                            </td>
-                            <td>
-                                <div class="weather-label">Humidity</div>
-                                <div class="weather-value">{humidity}%</div>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-            </div>
-        </div>
-        """
-    
-    html_content += '</div>'
-    
-    # Fetch and build charts
-    logger.info("Fetching 30-day daily averages...")
-    cal = locations[0]
-    bin_ = locations[1]
-    
-    cal_daily = get_daily_averages(cal["name"])
-    bin_daily = get_daily_averages(bin_["name"])
-    
+        html_content += build_card(loc, location_data.get(loc["name"]))
+
+    html_content += """
+        </tr>
+      </table>
+    </td>
+  </tr>
+"""
+
+    # Charts
+    logger.info("Fetching 30-day averages from Firebase...")
     chart_files = []
-    
-    if cal_daily or bin_daily:
-        html_content += '<div class="divider"></div><div class="charts">'
-        
-        if cal_daily:
-            cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_daily)
-            if cal_chart_path:
-                html_content += """
-                <div class="chart-section">
-                    <div class="chart-title">📊 Calamba - 30-Day AQI History</div>
-                    <div class="chart-subtitle">Daily average AQI · Color-coded by severity level</div>
-                    <img src="cid:calamba_chart" alt="Calamba 30-day AQI" class="chart-img" />
-                </div>
-                """
-                chart_files.append(("calamba_chart", cal_chart_path))
-        
-        if bin_daily:
-            bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_daily)
-            if bin_chart_path:
-                html_content += """
-                <div class="chart-section">
-                    <div class="chart-title">📊 Biñan - 30-Day AQI History</div>
-                    <div class="chart-subtitle">Daily average AQI · Color-coded by severity level</div>
-                    <img src="cid:binan_chart" alt="Biñan 30-day AQI" class="chart-img" />
-                </div>
-                """
-                chart_files.append(("binan_chart", bin_chart_path))
-        
-        html_content += '</div>'
-    
-    # NEWS
-    news_articles = get_air_quality_news()
-    elevated_aqi = _has_elevated_aqi(fetched_aqi)
+
+    for loc in locations:
+        daily = get_daily_averages(loc["name"])
+        if not daily:
+            continue
+        safe  = loc["name"].replace(",","").replace(" ","_").lower().replace("ñ","n")
+        cid   = f"{safe}_chart"
+        path  = build_bar_chart_plotly(loc["name"], daily)
+        if path:
+            html_content += f"""
+  <!-- Chart: {loc['name']} -->
+  <tr>
+    <td style="padding:0 20px 20px 20px;">
+      <div style="border-left:4px solid #667eea; padding-left:14px; margin-bottom:10px;">
+        <div style="font-size:15px; font-weight:bold; color:#333;">📊 {html.escape(loc['name'])} – 30-Day AQI History</div>
+        <div style="font-size:11px; color:#888; margin-top:3px;">Daily average AQI · Color-coded by severity</div>
+      </div>
+      <img src="cid:{cid}" width="100%" style="border-radius:6px; border:1px solid #e0e0e0; display:block;" alt="{html.escape(loc['name'])} AQI chart" />
+    </td>
+  </tr>
+"""
+            chart_files.append((cid, path))
+
+    # News
+    news_articles = get_news()
     if news_articles:
         html_content += """
-        <div class="divider"></div>
-        <div class="news-section">
-            <h3 class="news-title">📰 This Week's Air Quality & Environment Headlines</h3>
-        """
-        for article in news_articles:
-            title = html.escape(article.get("title") or "No title")
-            description = html.escape(article.get("description") or "No description")
-            url = html.escape(article.get("url") or "#", quote=True)
-            source = html.escape((article.get("source") or {}).get("name", "Unknown"))
-            
+  <!-- News -->
+  <tr>
+    <td style="padding:0 20px 20px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#fff3e0; border-left:4px solid #ff6f00; border-radius:0 8px 8px 0; padding:16px;">
+        <tr><td style="padding:16px;">
+          <div style="font-size:15px; font-weight:bold; color:#ff6f00; margin-bottom:10px;">📰 This Week's Headlines</div>
+"""
+        for a in news_articles:
+            title  = html.escape(a.get("title") or "No title")
+            desc   = html.escape(a.get("description") or "")
+            url    = html.escape(a.get("url") or "#", quote=True)
+            source = html.escape((a.get("source") or {}).get("name","Unknown"))
             html_content += f"""
-            <div class="news-article">
-                <a href="{url}" target="_blank">{title}</a><br>
-                <span class="news-source">{source}</span><br>
-                <p class="news-desc">{description}</p>
-            </div>
-            """
-        html_content += "</div>"
-    
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #ffe0b2; margin-bottom:10px; padding-bottom:10px;">
+            <tr><td>
+              <a href="{url}" style="font-size:13px; font-weight:bold; color:#ff6f00; text-decoration:none;">{title}</a><br>
+              <span style="font-size:11px; color:#999;">{source}</span><br>
+              <span style="font-size:12px; color:#333;">{desc}</span>
+            </td></tr>
+          </table>
+"""
+        html_content += """
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+"""
+
+    # Footer
     html_content += """
-    </div>
-    <div class="footer">
-        <p>Data sources: IQAir API, Open-Meteo API, NewsAPI</p>
-        <p>This is an automated report. Please do not reply to this email.</p>
-    </div>
-</div>
+  <!-- Footer -->
+  <tr>
+    <td style="background-color:#f5f5f5; padding:16px; text-align:center; border-top:1px solid #e0e0e0;">
+      <div style="font-size:11px; color:#999;">Data sources: IQAir API, Open-Meteo API, NewsAPI</div>
+      <div style="font-size:11px; color:#999; margin-top:4px;">This is an automated report. Please do not reply to this email.</div>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
 </body>
 </html>
-    """
+"""
     return html_content, chart_files
 
 # =========================
@@ -590,36 +441,32 @@ def send_email():
     try:
         html_email, chart_files = build_html_email()
         msg = MIMEMultipart("related")
-        msg_alternative = MIMEMultipart("alternative")
-        msg.attach(msg_alternative)
-        
+        msg_alt = MIMEMultipart("alternative")
+        msg.attach(msg_alt)
         msg["Subject"] = "🌍 Weekly AQI Report (Laguna)"
-        msg["From"] = SENDER
-        msg["To"] = ", ".join(RECEIVERS)
-        
-        msg_alternative.attach(MIMEText(html_email, "html"))
-        
+        msg["From"]    = SENDER
+        msg["To"]      = ", ".join(RECEIVERS)
+        msg_alt.attach(MIMEText(html_email, "html"))
+
         for chart_id, chart_path in chart_files:
             try:
-                with open(chart_path, "rb") as attachment:
+                with open(chart_path, "rb") as f:
                     part = MIMEBase("application", "octet-stream")
-                    part.set_payload(attachment.read())
+                    part.set_payload(f.read())
                 encoders.encode_base64(part)
                 part.add_header("Content-Disposition", f"inline; filename={chart_id}.png")
                 part.add_header("Content-ID", f"<{chart_id}>")
                 msg.attach(part)
-                logger.info(f"Attached chart: {chart_id}")
+                logger.info(f"Attached: {chart_id}")
             except Exception as e:
-                logger.error(f"Failed to attach chart {chart_id}: {e}")
-        
+                logger.error(f"Attachment error {chart_id}: {e}")
+
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SENDER, PASSWORD)
             server.sendmail(SENDER, RECEIVERS, msg.as_string())
         logger.info("Email sent successfully!")
     except smtplib.SMTPAuthenticationError:
         logger.error("SMTP authentication failed.")
-    except smtplib.SMTPException as e:
-        logger.error(f"SMTP error: {e}")
     except Exception as e:
         logger.error(f"Error: {e}")
 
