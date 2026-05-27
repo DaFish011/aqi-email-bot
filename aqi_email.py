@@ -72,11 +72,11 @@ PH_OFFSET = timedelta(hours=8)
 # AQI LABELS & COLORS
 # =========================
 aqi_map = {
-    1: {"label": "Good", "color": "#43a047", "advice": "Air quality is satisfactory."},
-    2: {"label": "Fair", "color": "#fbc02d", "advice": "Air quality is acceptable."},
-    3: {"label": "Moderate", "color": "#fb8c00", "advice": "Sensitive groups should limit outdoor activity."},
-    4: {"label": "Poor", "color": "#e53935", "advice": "Everyone should reduce prolonged outdoor activity."},
-    5: {"label": "Very Poor", "color": "#6a1b9a", "advice": "Avoid outdoor activity. Wear N95 masks if necessary."}
+    1: {"label": "Good", "color": "#43a047", "advice": "Air quality is satisfactory.", "emoji": "😊"},
+    2: {"label": "Fair", "color": "#fbc02d", "advice": "Air quality is acceptable.", "emoji": "🙂"},
+    3: {"label": "Moderate", "color": "#fb8c00", "advice": "Sensitive groups should limit outdoor activity.", "emoji": "⚠️"},
+    4: {"label": "Poor", "color": "#e53935", "advice": "Everyone should reduce prolonged outdoor activity.", "emoji": "😷"},
+    5: {"label": "Very Poor", "color": "#6a1b9a", "advice": "Avoid outdoor activity. Wear N95 masks if necessary.", "emoji": "🚫"}
 }
 
 # =========================
@@ -109,107 +109,24 @@ def get_current_aqi(lat, lon):
             logger.error(f"IQAir API error: {data.get('data')}")
             return None
         
-        aqi = data["data"]["current"]["pollution"]["aqius"]
-        pm25 = data["data"]["current"]["pollution"].get("aqiucn")
+        pollution = data["data"]["current"]["pollution"]
+        weather = data["data"]["current"]["weather"]
         
-        return {"aqi": aqi, "pm2_5": pm25}
+        # Map main pollutant code to name
+        pollutant_map = {"p1": "PM10", "p2": "PM2.5", "o3": "O3", "n2": "NO2"}
+        main_pollutant = pollutant_map.get(pollution.get("mainus"), pollution.get("mainus", "N/A"))
+        
+        return {
+            "aqi": pollution.get("aqius"),
+            "main_pollutant": main_pollutant,
+            "temperature": weather.get("tp"),
+            "humidity": weather.get("hu"),
+            "wind_direction": weather.get("wd"),
+            "wind_speed": round(weather.get("ws", 0), 2)
+        }
     except Exception as e:
         logger.error(f"Failed to fetch current AQI: {e}")
         return None
-
-# =========================
-# WEATHER FUNCTION (OPEN-METEO)
-# =========================
-def get_weather_data(lat, lon):
-    try:
-        url = (
-            f"https://api.open-meteo.com/v1/forecast"
-            f"?latitude={lat}&longitude={lon}"
-            f"&current_weather=true"
-        )
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        w = data.get("current_weather")
-        if not w:
-            return None
-        return {
-            "temp": w.get("temperature"),
-            "wind_speed": w.get("windspeed"),
-            "wind_deg": w.get("winddirection")
-        }
-    except RequestException as e:
-        logger.error(f"API request failed for weather data: {e}")
-        return None
-
-# =========================
-# WIND HELPERS
-# =========================
-def get_wind_description(wind_speed):
-    if wind_speed is None or wind_speed == "-":
-        return "Calm conditions"
-    try:
-        speed = float(wind_speed)
-        if speed < 1:
-            return "Calm breeze"
-        elif speed < 3:
-            return "Light breeze"
-        elif speed < 5:
-            return "Gentle breeze"
-        elif speed < 8:
-            return "Moderate breeze"
-        elif speed < 11:
-            return "Fresh breeze"
-        else:
-            return "Strong wind"
-    except (ValueError, TypeError):
-        return "Variable breeze"
-
-def get_compass_direction(wind_deg):
-    if wind_deg is None or wind_deg == "-":
-        return None
-    try:
-        degree = float(wind_deg)
-        directions = ["North", "NNE", "Northeast", "ENE", "East", "ESE", "Southeast", "SSE",
-                      "South", "SSW", "Southwest", "WSW", "West", "WNW", "Northwest", "NNW"]
-        index = round(degree / 22.5) % 16
-        return directions[index]
-    except (ValueError, TypeError):
-        return None
-
-def generate_wind_message(wind_deg, bearing_to_taal, wind_speed):
-    wind_desc = get_wind_description(wind_speed)
-    compass_dir = get_compass_direction(wind_deg)
-    
-    if wind_deg is None or bearing_to_taal is None:
-        return f"💨 {wind_desc}"
-    
-    try:
-        wind_deg_float = float(wind_deg)
-        diff = abs(wind_deg_float - bearing_to_taal)
-        if diff > 180:
-            diff = 360 - diff
-        
-        if diff < 90:
-            return f"💨 Wind blowing from Calamba towards Taal ({wind_desc}, {wind_speed} m/s)"
-        else:
-            if compass_dir:
-                return f"💨 Wind blowing away from Taal towards the {compass_dir} ({wind_desc}, {wind_speed} m/s)"
-            else:
-                return f"💨 {wind_desc} ({wind_speed} m/s)"
-    except (ValueError, TypeError):
-        return f"💨 {wind_desc}"
-
-# =========================
-# BEARING CALCULATION
-# =========================
-def get_bearing(lat1, lon1, lat2, lon2):
-    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlon = lon2 - lon1
-    x = math.sin(dlon) * math.cos(lat2)
-    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
-    bearing = math.degrees(math.atan2(x, y))
-    return (bearing + 360) % 360
 
 # =========================
 # NEWS
@@ -457,21 +374,24 @@ def build_html_email():
             .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
             .header h1 { margin: 0; font-size: 28px; }
             .header p { margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; }
-            .location-card { padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
-            .location-name { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; }
-            .aqi-box { display: block; padding: 15px 20px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 15px; text-align: center; }
-            .aqi-value { font-size: 36px; line-height: 1; }
-            .aqi-label { font-size: 16px; margin-top: 5px; }
-            .aqi-pm { font-size: 12px; margin-top: 5px; opacity: 0.9; }
-            .aqi-advice { margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 4px; font-size: 13px; color: #555; }
-            .weather-grid { display: table; width: 100%; margin: 15px 0; border-collapse: collapse; }
-            .weather-cell { display: table-cell; width: 33.33%; background-color: #f0f0f0; padding: 10px; text-align: center; border: 1px solid white; }
-            .weather-item-label { font-size: 12px; color: #777; }
-            .weather-item-value { font-size: 18px; font-weight: bold; color: #333; }
-            .pollutants-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-            .pollutants-table th { background-color: #667eea; color: white; padding: 10px; text-align: left; font-size: 13px; }
-            .pollutants-table td { padding: 10px; border-bottom: 1px solid #e0e0e0; font-size: 13px; }
-            .pollutants-table tr:nth-child(even) { background-color: #f9f9f9; }
+            .cards-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 20px; }
+            .aqi-card { border-radius: 8px; padding: 1.25rem; color: white; }
+            .card-location { font-size: 14px; font-weight: bold; margin-bottom: 1rem; }
+            .card-content { display: flex; gap: 0.75rem; align-items: flex-start; margin-bottom: 1rem; }
+            .aqi-box { background: rgba(255,255,255,0.2); border-radius: 6px; padding: 0.6rem; text-align: center; min-width: 70px; flex-shrink: 0; }
+            .aqi-value { font-size: 28px; font-weight: 500; line-height: 1; }
+            .aqi-label { font-size: 10px; margin-top: 4px; }
+            .card-text { flex: 1; font-size: 13px; }
+            .card-title { font-weight: 500; margin-bottom: 0.3rem; line-height: 1.2; }
+            .card-advice { opacity: 0.9; font-size: 12px; line-height: 1.3; }
+            .card-emoji { font-size: 32px; line-height: 1; flex-shrink: 0; }
+            .card-divider { border-top: 1px solid rgba(255,255,255,0.25); padding-top: 10px; font-size: 12px; }
+            .weather-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0 20px 20px 20px; }
+            .weather-card { background-color: #f9f9f9; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; display: flex; justify-content: space-around; align-items: center; }
+            .weather-item { text-align: center; }
+            .weather-icon { font-size: 20px; margin-bottom: 4px; }
+            .weather-value { font-size: 14px; font-weight: 500; color: #333; }
+            .weather-label { font-size: 10px; color: #888; }
             .footer { background-color: #f5f5f5; padding: 15px; text-align: center; border-radius: 0 0 8px 8px; font-size: 11px; color: #999; }
             .divider { height: 1px; background-color: #e0e0e0; margin: 20px; }
             .news-section { margin: 20px; padding: 20px; background-color: #fff3e0; border-left: 4px solid #ff6f00; border-radius: 4px; }
@@ -485,10 +405,6 @@ def build_html_email():
             .news-article a:hover { text-decoration: underline; }
             .news-source { font-size: 12px; color: #999; }
             .news-desc { font-size: 13px; color: #333; margin: 5px 0 0 0; }
-            .taal-info { background-color: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1565c0; }
-            .alert-card { border-left-color: #d32f2f !important; background-color: #ffebee !important; }
-            .alert-message { color: #d32f2f; font-weight: bold; margin-bottom: 10px; }
-            .locations-row { width: 100%; border-collapse: collapse; }
             .trend-section { margin: 20px; padding: 20px; border-left: 4px solid #667eea; background-color: #f9f9f9; border-radius: 4px; }
             .trend-title { font-size: 16px; font-weight: bold; color: #333; margin: 0 0 4px 0; }
             .trend-subtitle { font-size: 12px; color: #888; margin: 0 0 15px 0; }
@@ -501,74 +417,99 @@ def build_html_email():
                 <h1>🌍 Air Quality Report</h1>
                 <p>Weekly AQI & Weather Summary</p>
             </div>
-            <table class="locations-row" cellpadding="0" cellspacing="20">
-            <tr>
-    """
-    location_cards = []
-    fetched_aqi = {}
-    for loc in locations:
-        aqi_data = get_current_aqi(loc["lat"], loc["lon"])
-        weather_data = get_weather_data(loc["lat"], loc["lon"])
-        fetched_aqi[loc["name"]] = aqi_data
-        if not aqi_data:
-            logger.warning(f"No AQI data for {loc['name']}")
-            continue
-        aqi_level = get_aqi_level(aqi_data.get("aqi", 0))
-        aqi_info = aqi_map.get(aqi_level, aqi_map[3])
-        aqi_value = aqi_data.get("aqi", 0)
-        temp = weather_data.get("temp", "-") if weather_data else "-"
-        wind_speed = weather_data.get("wind_speed", "-") if weather_data else "-"
-        wind_deg = weather_data.get("wind_deg") if weather_data else None
-        wind_compass = get_compass_direction(wind_deg) or "-"
-        bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
-        wind_message = generate_wind_message(wind_deg, bearing_to_taal, wind_speed)
-        
-        is_alert = aqi_level >= 4
-        alert_class = "alert-card" if is_alert else ""
-        alert_border_color = "#d32f2f" if is_alert else "#667eea"
-        alert_message = "<div class='alert-message'>⚠️ ALERT: Air quality is poor or very poor</div>" if is_alert else ""
-        card_html = f"""
-                <td style="width: 50%; padding: 20px; vertical-align: top;">
-                <div class="location-card {alert_class}" style="border-left-color: {alert_border_color}; margin: 0;">
-                    <div class="location-name">📍 {html.escape(loc['name'])}</div>
-                    {alert_message}
-                    <div class="aqi-box" style="background-color: {aqi_info['color']};">
-                        <div class="aqi-value">{aqi_value}</div>
-                        <div class="aqi-label">{aqi_info['label']}</div>
-                    </div>
-                    <div class="aqi-advice">
-                        💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
-                    </div>
-                    <div class="taal-info">
-                        {wind_message}
-                    </div>
-                    <table class="weather-grid">
-                    <tr>
-                        <td class="weather-cell">
-                            <div class="weather-item-label">Temperature</div>
-                            <div class="weather-item-value">{temp}°C</div>
-                        </td>
-                        <td class="weather-cell">
-                            <div class="weather-item-label">Wind Speed</div>
-                            <div class="weather-item-value">{wind_speed} m/s</div>
-                        </td>
-                        <td class="weather-cell">
-                            <div class="weather-item-label">Direction</div>
-                            <div class="weather-item-value">{wind_compass}</div>
-                        </td>
-                    </tr>
-                    </table>
-                </div>
-                </td>
-        """
-        location_cards.append(card_html)
-    for card in location_cards:
-        html_content += card
-    html_content += """
-            </tr>
-            </table>
     """
     
+    # Fetch current AQI for both locations
+    fetched_aqi = {}
+    location_data = {}
+    
+    for loc in locations:
+        aqi_data = get_current_aqi(loc["lat"], loc["lon"])
+        fetched_aqi[loc["name"]] = aqi_data
+        location_data[loc["name"]] = aqi_data
+        
+        if not aqi_data:
+            logger.warning(f"No AQI data for {loc['name']}")
+    
+    # Build AQI cards (2 columns)
+    html_content += '<div class="cards-grid">'
+    
+    for loc in locations:
+        aqi_data = location_data.get(loc["name"])
+        if not aqi_data:
+            continue
+        
+        aqi_value = aqi_data.get("aqi", 0)
+        aqi_level = get_aqi_level(aqi_value)
+        aqi_info = aqi_map.get(aqi_level, aqi_map[3])
+        main_pollutant = aqi_data.get("main_pollutant", "N/A")
+        
+        card_html = f"""
+            <div class="aqi-card" style="background-color: {aqi_info['color']};">
+                <div class="card-location">📍 {html.escape(loc['name'])}</div>
+                
+                <div class="card-content">
+                    <div class="aqi-box">
+                        <div class="aqi-value">{aqi_value}</div>
+                        <div class="aqi-label">AQI</div>
+                    </div>
+                    
+                    <div class="card-text">
+                        <div class="card-title">{aqi_info['label']}</div>
+                        <div class="card-advice">{aqi_info['advice']}</div>
+                    </div>
+                    
+                    <div class="card-emoji">{aqi_info['emoji']}</div>
+                </div>
+                
+                <div class="card-divider">
+                    <strong>Main: {main_pollutant}</strong>
+                </div>
+            </div>
+        """
+        html_content += card_html
+    
+    html_content += '</div>'
+    
+    # Build weather cards (2 columns)
+    html_content += '<div class="weather-grid">'
+    
+    for loc in locations:
+        aqi_data = location_data.get(loc["name"])
+        if not aqi_data:
+            continue
+        
+        temp = aqi_data.get("temperature", "-")
+        humidity = aqi_data.get("humidity", "-")
+        wind_direction = aqi_data.get("wind_direction", "-")
+        wind_speed = aqi_data.get("wind_speed", "-")
+        
+        weather_html = f"""
+            <div class="weather-card">
+                <div class="weather-item">
+                    <div class="weather-icon">🌡️</div>
+                    <div class="weather-value">{temp}°C</div>
+                    <div class="weather-label">Temp</div>
+                </div>
+                
+                <div class="weather-item">
+                    <div class="weather-icon">🧭</div>
+                    <div class="weather-value">{wind_direction}°</div>
+                    <div class="weather-label">Wind</div>
+                </div>
+                
+                <div class="weather-item">
+                    <div class="weather-icon">💧</div>
+                    <div class="weather-value">{humidity}%</div>
+                    <div class="weather-label">Humidity</div>
+                </div>
+            </div>
+        """
+        html_content += weather_html
+    
+    html_content += '</div>'
+    
+    # Fetch and build charts
     logger.info("Fetching 30-day daily averages...")
     cal = locations[0]
     bin_ = locations[1]
