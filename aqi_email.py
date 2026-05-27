@@ -35,13 +35,13 @@ logger.info("="*50)
 # =========================
 # ENV VARIABLES
 # =========================
-API_KEY = os.getenv("API_KEY")
+IQAIR_API_KEY = os.getenv("IQAIR_API_KEY")
 SENDER = os.getenv("EMAIL_USER")
 PASSWORD = os.getenv("EMAIL_PASS")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 RECEIVERS_STR = os.getenv("RECEIVERS")
-if not all([API_KEY, SENDER, PASSWORD, RECEIVERS_STR]):
-    logger.error("Missing required environment variables: API_KEY, EMAIL_USER, EMAIL_PASS, or RECEIVERS")
+if not all([IQAIR_API_KEY, SENDER, PASSWORD, RECEIVERS_STR]):
+    logger.error("Missing required environment variables")
     exit(1)
 RECEIVERS = [email.strip() for email in RECEIVERS_STR.split(",")]
 
@@ -69,7 +69,7 @@ TAAL_LON = 121.0064
 PH_OFFSET = timedelta(hours=8)
 
 # =========================
-# AQI LABELS & COLORS (ORIGINAL BOLD COLORS)
+# AQI LABELS & COLORS
 # =========================
 aqi_map = {
     1: {"label": "Good", "color": "#43a047", "advice": "Air quality is satisfactory."},
@@ -80,25 +80,8 @@ aqi_map = {
 }
 
 # =========================
-# PM2.5 → AQI (EPA Formula)
+# AQI LEVEL FROM VALUE
 # =========================
-def pm25_to_aqi(pm25):
-    if pm25 is None or pm25 < 0:
-        return 0
-    breakpoints = [
-        (0.0,   12.0,   0,   50),
-        (12.1,  35.4,  51,  100),
-        (35.5,  55.4, 101,  150),
-        (55.5, 150.4, 151,  200),
-        (150.5, 250.4, 201, 300),
-        (250.5, 350.4, 301, 400),
-        (350.5, 500.4, 401, 500),
-    ]
-    for c_low, c_high, aqi_low, aqi_high in breakpoints:
-        if c_low <= pm25 <= c_high:
-            return round(((aqi_high - aqi_low) / (c_high - c_low)) * (pm25 - c_low) + aqi_low)
-    return 500
-
 def get_aqi_level(aqi_value):
     if aqi_value <= 50:
         return 1
@@ -112,28 +95,26 @@ def get_aqi_level(aqi_value):
         return 5
 
 # =========================
-# AQI FUNCTION (OPENWEATHER)
+# FETCH CURRENT AQI FROM IQAIR
 # =========================
-def get_aqi_data(lat, lon):
+def get_current_aqi(lat, lon):
+    """Fetch current AQI from IQAir"""
     try:
-        url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
+        url = f"http://api.airvisual.com/v2/nearest_city?lat={lat}&lon={lon}&key={IQAIR_API_KEY}"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-        m = data["list"][0]["main"]
-        c = data["list"][0]["components"]
-        return {
-            "aqi": m.get("aqi"),
-            "pm2_5": c.get("pm2_5"),
-            "pm10": c.get("pm10"),
-            "no2": c.get("no2"),
-            "o3": c.get("o3"),
-        }
-    except RequestException as e:
-        logger.error(f"API request failed for AQI data: {e}")
-        return None
-    except KeyError as e:
-        logger.error(f"Unexpected API response structure: {e}")
+        
+        if data.get("status") != "success":
+            logger.error(f"IQAir API error: {data.get('data')}")
+            return None
+        
+        aqi = data["data"]["current"]["pollution"]["aqius"]
+        pm25 = data["data"]["current"]["pollution"].get("aqiucn")
+        
+        return {"aqi": aqi, "pm2_5": pm25}
+    except Exception as e:
+        logger.error(f"Failed to fetch current AQI: {e}")
         return None
 
 # =========================
@@ -162,7 +143,7 @@ def get_weather_data(lat, lon):
         return None
 
 # =========================
-# WIND DIRECTION & SPEED DESCRIPTION
+# WIND HELPERS
 # =========================
 def get_wind_description(wind_speed):
     if wind_speed is None or wind_speed == "-":
@@ -220,7 +201,7 @@ def generate_wind_message(wind_deg, bearing_to_taal, wind_speed):
         return f"💨 {wind_desc}"
 
 # =========================
-# BEARING CALCULATION (FOR TAAL)
+# BEARING CALCULATION
 # =========================
 def get_bearing(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -336,63 +317,52 @@ def _has_elevated_aqi(fetched_aqi):
     for data in fetched_aqi.values():
         if not data:
             continue
-        if data.get("aqi", 0) >= 3:
-            return True
-        pm25 = data.get("pm2_5")
-        if pm25 is not None and pm25_to_aqi(pm25) > 100:
+        if data.get("aqi", 0) > 100:
             return True
     return False
 
 # =========================
-# GET AQI HISTORY FROM FIREBASE
+# GET DAILY AVERAGES FROM HOURLY DATA
 # =========================
-def get_aqi_history_from_firebase(location_name):
-    """Fetch AQI history from Firebase for a location"""
+def get_daily_averages(location_name):
+    """Fetch hourly data and calculate daily averages for past 30 days"""
     try:
-        ref = db.reference(f"aqi_readings/{location_name}")
-        data = ref.get()
+        ref = db.reference(f"aqi_hourly/{location_name}")
+        hourly_data = ref.get()
         
-        if not data:
-            logger.warning(f"No Firebase data for {location_name}")
+        if not hourly_data:
+            logger.warning(f"No hourly data for {location_name}")
             return []
         
-        history_list = []
-        for date_str in sorted(data.keys()):
-            entry = data[date_str]
-            history_list.append({
-                "date": date_str,
-                "pm2_5": entry.get("pm2_5"),
-                "aqi": entry.get("aqi")
-            })
+        daily_averages = []
+        for date_str in sorted(hourly_data.keys()):
+            hourly_readings = hourly_data[date_str]
+            aqi_values = [v.get("aqi") for v in hourly_readings.values() if v.get("aqi") is not None]
+            
+            if aqi_values:
+                avg_aqi = round(sum(aqi_values) / len(aqi_values))
+                daily_averages.append({"date": date_str, "aqi": avg_aqi})
+                logger.info(f"Daily avg: {location_name} | {date_str} | AQI: {avg_aqi} (from {len(aqi_values)} readings)")
         
-        logger.info(f"Loaded {len(history_list)} records for {location_name} from Firebase")
-        return history_list
+        logger.info(f"Loaded {len(daily_averages)} days for {location_name}")
+        return daily_averages
     except Exception as e:
-        logger.error(f"Failed to fetch AQI history from Firebase for {location_name}: {e}")
+        logger.error(f"Failed to fetch daily averages for {location_name}: {e}")
         return []
 
-def compute_daily_values(history_list):
-    """Extract AQI values from history"""
-    values = []
-    for entry in sorted(history_list, key=lambda x: x["date"]):
-        aqi = entry.get("aqi")
-        if aqi is not None:
-            values.append(aqi)
-    return values
-
 # =========================
-# BUILD BAR CHART WITH PLOTLY
+# BUILD BAR CHART
 # =========================
-def build_bar_chart_plotly(location_name, values):
-    """Build a professional bar chart using Plotly and save as PNG file."""
-    
-    if not values or len(values) == 0:
-        logger.warning(f"No values provided for {location_name} chart")
+def build_bar_chart_plotly(location_name, daily_data):
+    """Build bar chart from daily averages"""
+    if not daily_data or len(daily_data) == 0:
+        logger.warning(f"No data for {location_name} chart")
         return None
     
     try:
-        logger.info(f"Building Plotly chart for {location_name}")
+        logger.info(f"Building chart for {location_name}")
         
+        values = [d["aqi"] for d in daily_data]
         all_valid = [v for v in values if v is not None]
         max_y = max(all_valid) if all_valid else 100
         y_max = max_y + math.ceil(max_y * 0.15)
@@ -416,10 +386,7 @@ def build_bar_chart_plotly(location_name, values):
         fig.add_trace(go.Bar(
             x=day_numbers,
             y=values,
-            marker=dict(
-                color=colors,
-                line=dict(width=0)
-            ),
+            marker=dict(color=colors, line=dict(width=0)),
             text=text_labels,
             textposition="outside",
             textfont=dict(size=11, color="#c62828", family="Arial"),
@@ -470,7 +437,7 @@ def build_bar_chart_plotly(location_name, values):
         filepath = f"/tmp/{safe_name}_chart.png"
         fig.write_image(filepath)
         
-        logger.info(f"Chart for {location_name} saved to {filepath}")
+        logger.info(f"Chart saved: {filepath}")
         return filepath
 
     except Exception as e:
@@ -540,25 +507,21 @@ def build_html_email():
     location_cards = []
     fetched_aqi = {}
     for loc in locations:
-        aqi_data = get_aqi_data(loc["lat"], loc["lon"])
+        aqi_data = get_current_aqi(loc["lat"], loc["lon"])
         weather_data = get_weather_data(loc["lat"], loc["lon"])
         fetched_aqi[loc["name"]] = aqi_data
         if not aqi_data:
             logger.warning(f"No AQI data for {loc['name']}")
             continue
-        aqi_level = aqi_data.get("aqi", 0)
+        aqi_level = get_aqi_level(aqi_data.get("aqi", 0))
         aqi_info = aqi_map.get(aqi_level, aqi_map[3])
-        pm2_5 = aqi_data.get("pm2_5", 0)
-        aqi_numeric = pm25_to_aqi(pm2_5)
+        aqi_value = aqi_data.get("aqi", 0)
         temp = weather_data.get("temp", "-") if weather_data else "-"
         wind_speed = weather_data.get("wind_speed", "-") if weather_data else "-"
         wind_deg = weather_data.get("wind_deg") if weather_data else None
-        pm10 = aqi_data.get("pm10", "-")
-        no2 = aqi_data.get("no2", "-")
-        o3 = aqi_data.get("o3", "-")
+        wind_compass = get_compass_direction(wind_deg) or "-"
         bearing_to_taal = get_bearing(loc["lat"], loc["lon"], TAAL_LAT, TAAL_LON)
         wind_message = generate_wind_message(wind_deg, bearing_to_taal, wind_speed)
-        wind_compass = get_compass_direction(wind_deg) or "-"
         
         is_alert = aqi_level >= 4
         alert_class = "alert-card" if is_alert else ""
@@ -570,9 +533,8 @@ def build_html_email():
                     <div class="location-name">📍 {html.escape(loc['name'])}</div>
                     {alert_message}
                     <div class="aqi-box" style="background-color: {aqi_info['color']};">
-                        <div class="aqi-value">{aqi_level}</div>
+                        <div class="aqi-value">{aqi_value}</div>
                         <div class="aqi-label">{aqi_info['label']}</div>
-                        <div class="aqi-pm">PM2.5: {aqi_numeric}/500</div>
                     </div>
                     <div class="aqi-advice">
                         💡 <strong>{aqi_info['label']}:</strong> {aqi_info['advice']}
@@ -596,13 +558,6 @@ def build_html_email():
                         </td>
                     </tr>
                     </table>
-                    <table class="pollutants-table">
-                        <tr><th>Pollutant</th><th>Level</th></tr>
-                        <tr><td>PM2.5</td><td>{pm2_5}</td></tr>
-                        <tr><td>PM10</td><td>{pm10}</td></tr>
-                        <tr><td>NO₂</td><td>{no2}</td></tr>
-                        <tr><td>O₃</td><td>{o3}</td></tr>
-                    </table>
                 </div>
                 </td>
         """
@@ -614,50 +569,41 @@ def build_html_email():
             </table>
     """
     
-    logger.info("Fetching 30-day AQI history from Firebase...")
+    logger.info("Fetching 30-day daily averages...")
     cal = locations[0]
     bin_ = locations[1]
     
-    cal_history = get_aqi_history_from_firebase(cal["name"])
-    bin_history = get_aqi_history_from_firebase(bin_["name"])
-    
-    cal_values = compute_daily_values(cal_history)
-    bin_values = compute_daily_values(bin_history)
+    cal_daily = get_daily_averages(cal["name"])
+    bin_daily = get_daily_averages(bin_["name"])
     
     chart_files = []
     
-    if cal_values:
-        logger.info(f"Calamba: {len(cal_values)} days")
-        cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_values)
-        
+    if cal_daily:
+        cal_chart_path = build_bar_chart_plotly("Calamba, Laguna", cal_daily)
         if cal_chart_path:
             html_content += f"""
             <div class="divider"></div>
             <div class="trend-section">
                 <p class="trend-title">📊 Calamba - 30-Day AQI History</p>
-                <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="cid:calamba_chart" alt="Calamba 30-day AQI bar chart" class="trend-img" />
+                <p class="trend-subtitle">Daily average AQI · Color-coded by severity level</p>
+                <img src="cid:calamba_chart" alt="Calamba 30-day AQI" class="trend-img" />
             </div>
             """
             chart_files.append(("calamba_chart", cal_chart_path))
     
-    if bin_values:
-        logger.info(f"Biñan: {len(bin_values)} days")
-        bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_values)
-        
+    if bin_daily:
+        bin_chart_path = build_bar_chart_plotly("Biñan, Laguna", bin_daily)
         if bin_chart_path:
             html_content += f"""
             <div class="trend-section">
                 <p class="trend-title">📊 Biñan - 30-Day AQI History</p>
-                <p class="trend-subtitle">Daily AQI readings · Color-coded by severity level</p>
-                <img src="cid:binan_chart" alt="Biñan 30-day AQI bar chart" class="trend-img" />
+                <p class="trend-subtitle">Daily average AQI · Color-coded by severity level</p>
+                <img src="cid:binan_chart" alt="Biñan 30-day AQI" class="trend-img" />
             </div>
             """
             chart_files.append(("binan_chart", bin_chart_path))
     
-    # =========================
-    # NEWS SECTION
-    # =========================
+    # NEWS
     news_articles = get_air_quality_news()
     elevated_aqi = _has_elevated_aqi(fetched_aqi)
     if news_articles:
@@ -665,11 +611,11 @@ def build_html_email():
         <div class="divider"></div>
         <div class="news-section">
             <h3 class="news-title">📰 This Week's Air Quality & Environment Headlines</h3>
-            <p class="news-subtitle">News from the Laguna region and Taal area that may affect air quality — volcano activity, regional pollution, and smoke events.</p>
+            <p class="news-subtitle">News from the Laguna region and Taal area that may affect air quality</p>
         """
         if elevated_aqi:
             html_content += """
-            <p class="news-intro">⚠️ Elevated AQI detected in at least one location. Related headlines below.</p>
+            <p class="news-intro">⚠️ Elevated AQI detected. Related headlines below.</p>
         """
         for article in news_articles:
             title = html.escape(article.get("title") or "No title")
@@ -688,21 +634,10 @@ def build_html_email():
             </div>
             """
         html_content += "</div>"
-    else:
-        empty_msg = (
-            "ℹ️ No matching headlines this week. AQI drivers can include weather patterns, traffic, fires, or Taal activity."
-            if elevated_aqi
-            else "ℹ️ No recent air-quality or volcano-related headlines found for the Laguna region this week."
-        )
-        html_content += f"""
-        <div style="margin: 20px; padding: 20px; background-color: #f5f5f5; border-left: 4px solid #999; border-radius: 4px;">
-            <p style="color: #999; margin: 0;">{html.escape(empty_msg)}</p>
-        </div>
-        """
     
     html_content += """
             <div class="footer">
-                <p>Data sources: OpenWeatherMap API, Open-Meteo API, NewsAPI, Firebase Realtime Database</p>
+                <p>Data sources: IQAir API, Open-Meteo API, NewsAPI</p>
                 <p>This is an automated report. Please do not reply to this email.</p>
             </div>
         </div>
@@ -745,14 +680,11 @@ def send_email():
             server.sendmail(SENDER, RECEIVERS, msg.as_string())
         logger.info("Email sent successfully!")
     except smtplib.SMTPAuthenticationError:
-        logger.error("SMTP authentication failed. Check EMAIL_USER and EMAIL_PASS.")
+        logger.error("SMTP authentication failed.")
     except smtplib.SMTPException as e:
-        logger.error(f"SMTP error occurred: {e}")
+        logger.error(f"SMTP error: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error while sending email: {e}")
+        logger.error(f"Error: {e}")
 
-# =========================
-# MAIN
-# =========================
 if __name__ == "__main__":
     send_email()
