@@ -1,5 +1,3 @@
-cd ~/Documents/aqi-email-bot
-cat > collect_aqi.py << 'EOF'
 import requests
 import sqlite3
 import os
@@ -106,4 +104,3 @@ def collect_aqi():
 
 if __name__ == "__main__":
     collect_aqi()
-EOF
