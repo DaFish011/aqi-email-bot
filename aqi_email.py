@@ -58,8 +58,14 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba, Laguna", "lat": 14.1919, "lon": 121.0711},
-    {"name": "Biñan, Laguna",   "lat": 14.2769, "lon": 121.0589},
+    {"name": "Calamba, Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
+    {"name": "Biñan, Laguna",   "lat": 14.2769, "lon": 121.0589},  # Placeholder - uses averaged Unioil data
+]
+
+# Binan uses two stations that we'll average
+binan_stations = [
+    {"name": "Unioil Lucban", "lat": 14.1156, "lon": 121.5554},
+    {"name": "Unioil San Francisco Halang Rd", "lat": 14.2769, "lon": 121.0589},
 ]
 TAAL_LAT  = 14.0136
 TAAL_LON  = 120.9842
@@ -94,6 +100,25 @@ def get_compass_direction(deg):
         return dirs[round(float(deg) / 22.5) % 16]
     except:
         return "N/A"
+
+def average_aqi_data(aqi_list):
+    """Average AQI data from multiple stations"""
+    if not aqi_list or all(d is None for d in aqi_list):
+        return None
+    
+    valid_data = [d for d in aqi_list if d is not None]
+    if not valid_data:
+        return None
+    
+    avg_data = {}
+    avg_data["aqi"] = int(sum(d.get("aqi", 0) for d in valid_data) / len(valid_data))
+    avg_data["main_pollutant"] = valid_data[0].get("main_pollutant", "N/A")
+    avg_data["temperature"] = int(sum(float(d.get("temperature", 0)) for d in valid_data if d.get("temperature") != "-") / len([d for d in valid_data if d.get("temperature") != "-"])) if any(d.get("temperature") != "-" for d in valid_data) else "-"
+    avg_data["humidity"] = int(sum(d.get("humidity", 0) for d in valid_data) / len(valid_data))
+    avg_data["wind_speed"] = round(sum(float(d.get("wind_speed", 0)) for d in valid_data if d.get("wind_speed") != "-") / len([d for d in valid_data if d.get("wind_speed") != "-"]), 2) if any(d.get("wind_speed") != "-" for d in valid_data) else "-"
+    avg_data["wind_direction"] = valid_data[0].get("wind_direction")  # Use first station's wind direction
+    
+    return avg_data
 
 def get_bearing(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -462,6 +487,11 @@ def build_card(loc, aqi_data, taal_wind):
 def build_html_email():
     taal_wind = get_current_aqi(TAAL_LAT, TAAL_LON)
     location_data = {loc["name"]: get_current_aqi(loc["lat"], loc["lon"]) for loc in locations}
+    
+    # Fetch both Unioil stations for Binan and average them
+    binan_data_list = [get_current_aqi(station["lat"], station["lon"]) for station in binan_stations]
+    binan_averaged = average_aqi_data(binan_data_list)
+    location_data["Biñan, Laguna"] = binan_averaged
 
     html_content = """<!DOCTYPE html>
 <html>
