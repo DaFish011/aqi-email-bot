@@ -35,14 +35,13 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
+    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Bong Valdez at Treveia Nuvali
 ]
 
-# Binan uses two stations that we'll average
-binan_stations = [
-    {"name": "Unioil Lucban", "lat": 14.1156, "lon": 121.5554},
-    {"name": "Unioil San Francisco Halang Rd", "lat": 14.2769, "lon": 121.0589},
-]
+# Binan uses only Unioil San Francisco Halang Rd (Unioil Lucban removed as it's too far in San Pablo/Lucban area)
+binan_station = {
+    "name": "Unioil San Francisco Halang Rd", "lat": 14.2769, "lon": 121.0589
+}
 
 PH_OFFSET = timedelta(hours=8)
 
@@ -66,16 +65,6 @@ def get_aqi_from_iqair(lat, lon):
     except Exception as e:
         logger.error(f"Failed to fetch AQI from IQAir for ({lat}, {lon}): {e}")
         return None
-
-# =========================
-# AVERAGE AQI FROM MULTIPLE SOURCES
-# =========================
-def average_aqi_values(aqi_list):
-    """Average AQI values from multiple stations"""
-    valid_aqi = [aqi for aqi in aqi_list if aqi is not None]
-    if not valid_aqi:
-        return None
-    return int(sum(valid_aqi) / len(valid_aqi))
 
 # =========================
 # STORE HOURLY READING IN FIREBASE
@@ -129,10 +118,9 @@ def collect_aqi():
         aqi = get_aqi_from_iqair(loc["lat"], loc["lon"])
         store_hourly_reading(loc["name"], aqi)
     
-    # Collect Binan data (average from both Unioil stations)
-    binan_aqi_list = [get_aqi_from_iqair(station["lat"], station["lon"]) for station in binan_stations]
-    binan_averaged_aqi = average_aqi_values(binan_aqi_list)
-    store_hourly_reading("Biñan Laguna", binan_averaged_aqi)
+    # Collect Binan data (single station only)
+    binan_aqi = get_aqi_from_iqair(binan_station["lat"], binan_station["lon"])
+    store_hourly_reading("Binan Laguna", binan_aqi)
     
     cleanup_old_data(days=30)
     logger.info("AQI collection complete")

@@ -58,14 +58,13 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
+    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Bong Valdez at Treveia Nuvali
 ]
 
-# Binan uses two stations that we'll average
-binan_stations = [
-    {"name": "Unioil Lucban", "lat": 14.1156, "lon": 121.5554},
-    {"name": "Unioil San Francisco Halang Rd", "lat": 14.2769, "lon": 121.0589},
-]
+# Binan uses only Unioil San Francisco Halang Rd
+binan_station = {
+    "name": "Unioil San Francisco Halang Rd", "lat": 14.2769, "lon": 121.0589
+}
 TAAL_LAT  = 14.0136
 TAAL_LON  = 120.9842
 PH_OFFSET = timedelta(hours=8)
@@ -99,25 +98,6 @@ def get_compass_direction(deg):
         return dirs[round(float(deg) / 22.5) % 16]
     except:
         return "N/A"
-
-def average_aqi_data(aqi_list):
-    """Average AQI data from multiple stations"""
-    if not aqi_list or all(d is None for d in aqi_list):
-        return None
-    
-    valid_data = [d for d in aqi_list if d is not None]
-    if not valid_data:
-        return None
-    
-    avg_data = {}
-    avg_data["aqi"] = int(sum(d.get("aqi", 0) for d in valid_data) / len(valid_data))
-    avg_data["main_pollutant"] = valid_data[0].get("main_pollutant", "N/A")
-    avg_data["temperature"] = int(sum(float(d.get("temperature", 0)) for d in valid_data if d.get("temperature") != "-") / len([d for d in valid_data if d.get("temperature") != "-"])) if any(d.get("temperature") != "-" for d in valid_data) else "-"
-    avg_data["humidity"] = int(sum(d.get("humidity", 0) for d in valid_data) / len(valid_data))
-    avg_data["wind_speed"] = round(sum(float(d.get("wind_speed", 0)) for d in valid_data if d.get("wind_speed") != "-") / len([d for d in valid_data if d.get("wind_speed") != "-"]), 2) if any(d.get("wind_speed") != "-" for d in valid_data) else "-"
-    avg_data["wind_direction"] = valid_data[0].get("wind_direction")  # Use first station's wind direction
-    
-    return avg_data
 
 def get_bearing(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -489,13 +469,11 @@ def build_html_email():
     # Fetch Calamba data
     location_data = {}
     for loc in locations:
-        if loc["name"] == "Calamba Laguna":
-            location_data[loc["name"]] = get_current_aqi(loc["lat"], loc["lon"])
+        location_data[loc["name"]] = get_current_aqi(loc["lat"], loc["lon"])
     
-    # Fetch both Unioil stations for Binan and average them
-    binan_data_list = [get_current_aqi(station["lat"], station["lon"]) for station in binan_stations]
-    binan_averaged = average_aqi_data(binan_data_list)
-    location_data["Biñan Laguna"] = binan_averaged
+    # Fetch Binan data (single station)
+    binan_data = get_current_aqi(binan_station["lat"], binan_station["lon"])
+    location_data["Binan Laguna"] = binan_data
 
     html_content = """<!DOCTYPE html>
 <html>
@@ -525,9 +503,9 @@ def build_html_email():
     for loc in locations:
         html_content += build_card(loc, location_data.get(loc["name"]), taal_wind)
     
-    # Add Binan card (built from averaged Unioil data)
-    binan_card_data = {"name": "Biñan Laguna", "lat": 14.2769, "lon": 121.0589}
-    html_content += build_card(binan_card_data, location_data.get("Biñan Laguna"), taal_wind)
+    # Add Binan card (built from single station data)
+    binan_card_data = {"name": "Binan Laguna", "lat": 14.2769, "lon": 121.0589}
+    html_content += build_card(binan_card_data, location_data.get("Binan Laguna"), taal_wind)
 
     html_content += """
         </tr>
@@ -560,18 +538,18 @@ def build_html_email():
             chart_files.append((cid, path))
     
     # Add Binan chart
-    binan_daily = get_daily_averages("Biñan Laguna")
+    binan_daily = get_daily_averages("Binan Laguna")
     binan_safe = "binan_laguna_chart"
-    binan_path = build_bar_chart_plotly("Biñan Laguna", binan_daily)
+    binan_path = build_bar_chart_plotly("Binan Laguna", binan_daily)
     if binan_path:
         html_content += f"""
   <tr>
     <td style="padding:0 20px 20px 20px;">
       <div style="border-left:4px solid #667eea; padding-left:14px; margin-bottom:10px;">
-        <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:#333;">📊 Biñan Laguna – 30-Day AQI History</div>
+        <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:#333;">📊 Binan Laguna – 30-Day AQI History</div>
         <div style="font-family:Arial,sans-serif; font-size:11px; color:#888; margin-top:3px;">Daily average AQI · Color-coded by severity · Saturdays labeled</div>
       </div>
-      <img src="cid:{binan_safe}" width="100%" style="border-radius:6px; border:1px solid #e0e0e0; display:block;" alt="Biñan Laguna chart" />
+      <img src="cid:{binan_safe}" width="100%" style="border-radius:6px; border:1px solid #e0e0e0; display:block;" alt="Binan Laguna chart" />
     </td>
   </tr>
 """
