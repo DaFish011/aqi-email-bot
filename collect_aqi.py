@@ -35,7 +35,7 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba, Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
+    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
 ]
 
 # Binan uses two stations that we'll average
@@ -132,7 +132,7 @@ def collect_aqi():
     # Collect Binan data (average from both Unioil stations)
     binan_aqi_list = [get_aqi_from_iqair(station["lat"], station["lon"]) for station in binan_stations]
     binan_averaged_aqi = average_aqi_values(binan_aqi_list)
-    store_hourly_reading("Biñan, Laguna", binan_averaged_aqi)
+    store_hourly_reading("Biñan Laguna", binan_averaged_aqi)
     
     cleanup_old_data(days=30)
     logger.info("AQI collection complete")
