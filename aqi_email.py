@@ -59,7 +59,6 @@ except ValueError:
 # =========================
 locations = [
     {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
-    {"name": "Biñan Laguna",   "lat": 14.2769, "lon": 121.0589},  # Placeholder - uses averaged Unioil data
 ]
 
 # Binan uses two stations that we'll average
@@ -486,7 +485,12 @@ def build_card(loc, aqi_data, taal_wind):
 # =========================
 def build_html_email():
     taal_wind = get_current_aqi(TAAL_LAT, TAAL_LON)
-    location_data = {loc["name"]: get_current_aqi(loc["lat"], loc["lon"]) for loc in locations}
+    
+    # Fetch Calamba data
+    location_data = {}
+    for loc in locations:
+        if loc["name"] == "Calamba Laguna":
+            location_data[loc["name"]] = get_current_aqi(loc["lat"], loc["lon"])
     
     # Fetch both Unioil stations for Binan and average them
     binan_data_list = [get_current_aqi(station["lat"], station["lon"]) for station in binan_stations]
@@ -520,6 +524,10 @@ def build_html_email():
 """
     for loc in locations:
         html_content += build_card(loc, location_data.get(loc["name"]), taal_wind)
+    
+    # Add Binan card (built from averaged Unioil data)
+    binan_card_data = {"name": "Biñan Laguna", "lat": 14.2769, "lon": 121.0589}
+    html_content += build_card(binan_card_data, location_data.get("Biñan Laguna"), taal_wind)
 
     html_content += """
         </tr>
@@ -550,6 +558,24 @@ def build_html_email():
   </tr>
 """
             chart_files.append((cid, path))
+    
+    # Add Binan chart
+    binan_daily = get_daily_averages("Biñan Laguna")
+    binan_safe = "binan_laguna_chart"
+    binan_path = build_bar_chart_plotly("Biñan Laguna", binan_daily)
+    if binan_path:
+        html_content += f"""
+  <tr>
+    <td style="padding:0 20px 20px 20px;">
+      <div style="border-left:4px solid #667eea; padding-left:14px; margin-bottom:10px;">
+        <div style="font-family:Arial,sans-serif; font-size:15px; font-weight:bold; color:#333;">📊 Biñan Laguna – 30-Day AQI History</div>
+        <div style="font-family:Arial,sans-serif; font-size:11px; color:#888; margin-top:3px;">Daily average AQI · Color-coded by severity · Saturdays labeled</div>
+      </div>
+      <img src="cid:{binan_safe}" width="100%" style="border-radius:6px; border:1px solid #e0e0e0; display:block;" alt="Biñan Laguna chart" />
+    </td>
+  </tr>
+"""
+        chart_files.append((binan_safe, binan_path))
 
     # News
     news_articles = get_news()
