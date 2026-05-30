@@ -58,8 +58,8 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba, Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
-    {"name": "Biñan, Laguna",   "lat": 14.2769, "lon": 121.0589},  # Placeholder - uses averaged Unioil data
+    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Treveia Nuvali station
+    {"name": "Biñan Laguna",   "lat": 14.2769, "lon": 121.0589},  # Placeholder - uses averaged Unioil data
 ]
 
 # Binan uses two stations that we'll average
@@ -491,7 +491,7 @@ def build_html_email():
     # Fetch both Unioil stations for Binan and average them
     binan_data_list = [get_current_aqi(station["lat"], station["lon"]) for station in binan_stations]
     binan_averaged = average_aqi_data(binan_data_list)
-    location_data["Biñan, Laguna"] = binan_averaged
+    location_data["Biñan Laguna"] = binan_averaged
 
     html_content = """<!DOCTYPE html>
 <html>
