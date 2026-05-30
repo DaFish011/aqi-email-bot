@@ -277,6 +277,39 @@ def get_news(max_articles=6):
     return result
 
 # =========================
+# GET LAST KNOWN VALUE FROM FIREBASE (fallback for missing current data)
+# =========================
+def get_last_known_aqi(location_name):
+    """Get the most recent AQI value from Firebase for this location"""
+    try:
+        data = db.reference(f"aqi_hourly/{location_name}").get()
+        if not data:
+            return None
+        
+        # Search backwards from today
+        today = (datetime.utcnow() + PH_OFFSET).date()
+        for i in range(30):  # Look back up to 30 days
+            day = today - timedelta(days=i)
+            date_str = day.strftime("%Y-%m-%d")
+            
+            if date_str in data:
+                # Get most recent hour with data for this day
+                day_data = data[date_str]
+                for hour in range(23, -1, -1):  # Search from 23:00 backwards
+                    hour_key = f"{hour:02d}"
+                    if hour_key in day_data and day_data[hour_key].get("aqi"):
+                        aqi = day_data[hour_key].get("aqi")
+                        if aqi != 0:  # Only return non-zero values
+                            logger.info(f"Last known AQI for {location_name}: {aqi} from {date_str} {hour_key}:00")
+                            return aqi
+        
+        logger.warning(f"No last known AQI found for {location_name}")
+        return None
+    except Exception as e:
+        logger.error(f"Error getting last known AQI for {location_name}: {e}")
+        return None
+
+# =========================
 # FIREBASE DAILY AVERAGES (always 30 days)
 # =========================
 def get_daily_averages(location_name):
@@ -288,7 +321,8 @@ def get_daily_averages(location_name):
             day      = today - timedelta(days=i)
             date_str = day.strftime("%Y-%m-%d")
             if data and date_str in data:
-                vals = [v.get("aqi") for v in data[date_str].values() if v.get("aqi") is not None]
+                # Exclude AQI values of 0 (missing data) from average
+                vals = [v.get("aqi") for v in data[date_str].values() if v.get("aqi") is not None and v.get("aqi") != 0]
                 avg  = round(sum(vals) / len(vals)) if vals else None
             else:
                 avg = None
@@ -501,11 +535,23 @@ def build_html_email():
         <tr>
 """
     for loc in locations:
-        html_content += build_card(loc, location_data.get(loc["name"]), taal_wind)
+        aqi_data = location_data.get(loc["name"])
+        # If no current data, get last known value
+        if aqi_data is None:
+            last_aqi = get_last_known_aqi(loc["name"])
+            if last_aqi:
+                aqi_data = {"aqi": last_aqi}
+        html_content += build_card(loc, aqi_data, taal_wind)
     
     # Add Binan card (built from single station data)
     binan_card_data = {"name": "Binan Laguna", "lat": 14.2769, "lon": 121.0589}
-    html_content += build_card(binan_card_data, location_data.get("Binan Laguna"), taal_wind)
+    binan_data = location_data.get("Binan Laguna")
+    # If no current data, get last known value
+    if binan_data is None:
+        last_aqi = get_last_known_aqi("Binan Laguna")
+        if last_aqi:
+            binan_data = {"aqi": last_aqi}
+    html_content += build_card(binan_card_data, binan_data, taal_wind)
 
     html_content += """
         </tr>
