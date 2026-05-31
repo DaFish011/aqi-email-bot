@@ -58,12 +58,12 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Bong Valdez at Treveia Nuvali
+    {"name": "Calamba Laguna", "lat": 14.2014, "lon": 121.0617},  # Bong Valdez station
 ]
 
 # Binan uses only Unioil San Francisco Halang Rd
 binan_station = {
-    "name": "Unioil San Francisco Halang Rd", "lat": 14.2769, "lon": 121.0589
+    "name": "Unioil San Francisco Halang Rd", "lat": 14.335029, "lon": 121.061267
 }
 TAAL_LAT  = 14.0136
 TAAL_LON  = 120.9842
@@ -313,6 +313,7 @@ def get_last_known_aqi(location_name):
 # FIREBASE DAILY AVERAGES (always 30 days)
 # =========================
 def get_daily_averages(location_name):
+    """Calculate daily average from 5-minute interval readings"""
     try:
         data  = db.reference(f"aqi_hourly/{location_name}").get()
         today = (datetime.utcnow() + PH_OFFSET).date()
@@ -321,7 +322,8 @@ def get_daily_averages(location_name):
             day      = today - timedelta(days=i)
             date_str = day.strftime("%Y-%m-%d")
             if data and date_str in data:
-                # Exclude AQI values of 0 (missing data) from average
+                # Collect all AQI values for this day (from all 5-minute readings)
+                # Exclude zero values (missing data)
                 vals = [v.get("aqi") for v in data[date_str].values() if v.get("aqi") is not None and v.get("aqi") != 0]
                 avg  = round(sum(vals) / len(vals)) if vals else None
             else:
