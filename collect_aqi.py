@@ -67,24 +67,25 @@ def get_aqi_from_iqair(lat, lon):
         return None
 
 # =========================
-# STORE HOURLY READING IN FIREBASE
+# STORE 5-MINUTE READING IN FIREBASE
 # =========================
-def store_hourly_reading(location_name, aqi):
+def store_reading(location_name, aqi):
+    """Store AQI reading with 5-minute precision"""
     if aqi is None:
         logger.warning(f"Skipping {location_name} - no AQI data")
         return False
 
     now_ph   = datetime.utcnow() + PH_OFFSET
     date_key = now_ph.strftime("%Y-%m-%d")
-    hour_key = now_ph.strftime("%H")
+    time_key = now_ph.strftime("%H:%M")  # Now includes minutes (HH:MM format)
 
     try:
-        ref = db.reference(f"aqi_hourly/{location_name}/{date_key}/{hour_key}")
+        ref = db.reference(f"aqi_hourly/{location_name}/{date_key}/{time_key}")
         ref.set({
             "aqi":       aqi,
             "timestamp": now_ph.isoformat()
         })
-        logger.info(f"Stored: {location_name} | {date_key} {hour_key}:00 | AQI: {aqi}")
+        logger.info(f"Stored: {location_name} | {date_key} {time_key} | AQI: {aqi}")
         return True
     except Exception as e:
         logger.error(f"Firebase error for {location_name}: {e}")
@@ -111,16 +112,16 @@ def cleanup_old_data(days=30):
 # MAIN
 # =========================
 def collect_aqi():
-    logger.info("Starting hourly AQI collection (IQAir)...")
+    logger.info("Starting 5-minute AQI collection (IQAir)...")
     
     # Collect Calamba data
     for loc in locations:
         aqi = get_aqi_from_iqair(loc["lat"], loc["lon"])
-        store_hourly_reading(loc["name"], aqi)
+        store_reading(loc["name"], aqi)
     
     # Collect Binan data (single station only)
     binan_aqi = get_aqi_from_iqair(binan_station["lat"], binan_station["lon"])
-    store_hourly_reading("Binan Laguna", binan_aqi)
+    store_reading("Binan Laguna", binan_aqi)
     
     cleanup_old_data(days=30)
     logger.info("AQI collection complete")
