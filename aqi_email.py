@@ -280,7 +280,7 @@ def get_news(max_articles=6):
 # GET LAST KNOWN VALUE FROM FIREBASE (fallback for missing current data)
 # =========================
 def get_last_known_aqi(location_name):
-    """Get the most recent AQI value from Firebase for this location"""
+    """Get the most recent AQI value from Firebase for this location (5-minute intervals)"""
     try:
         data = db.reference(f"aqi_hourly/{location_name}").get()
         if not data:
@@ -293,14 +293,14 @@ def get_last_known_aqi(location_name):
             date_str = day.strftime("%Y-%m-%d")
             
             if date_str in data:
-                # Get most recent hour with data for this day
+                # Get most recent 5-minute reading for this day
                 day_data = data[date_str]
-                for hour in range(23, -1, -1):  # Search from 23:00 backwards
-                    hour_key = f"{hour:02d}"
-                    if hour_key in day_data and day_data[hour_key].get("aqi"):
-                        aqi = day_data[hour_key].get("aqi")
+                # Sort times in reverse order to get latest first
+                for time_key in sorted(day_data.keys(), reverse=True):
+                    if day_data[time_key].get("aqi"):
+                        aqi = day_data[time_key].get("aqi")
                         if aqi != 0:  # Only return non-zero values
-                            logger.info(f"Last known AQI for {location_name}: {aqi} from {date_str} {hour_key}:00")
+                            logger.info(f"Last known AQI for {location_name}: {aqi} from {date_str} {time_key}")
                             return aqi
         
         logger.warning(f"No last known AQI found for {location_name}")
