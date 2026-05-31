@@ -94,7 +94,7 @@ def store_reading(location_name, aqi):
 # =========================
 # CLEANUP OLD DATA (>30 days)
 # =========================
-def cleanup_old_data(days=30):
+def cleanup_old_data(days=180):
     try:
         cutoff = (datetime.utcnow() + PH_OFFSET - timedelta(days=days)).strftime("%Y-%m-%d")
         for loc in locations:
