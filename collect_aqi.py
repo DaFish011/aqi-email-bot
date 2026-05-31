@@ -35,12 +35,12 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba Laguna", "lat": 14.217528, "lon": 121.064056},  # Bong Valdez at Treveia Nuvali
+    {"name": "Calamba Laguna", "lat": 14.2014, "lon": 121.0617},  # Bong Valdez station
 ]
 
-# Binan uses only Unioil San Francisco Halang Rd (Unioil Lucban removed as it's too far in San Pablo/Lucban area)
+# Binan uses only Unioil San Francisco Halang Rd
 binan_station = {
-    "name": "Unioil San Francisco Halang Rd", "lat": 14.2769, "lon": 121.0589
+    "name": "Unioil San Francisco Halang Rd", "lat": 14.335029, "lon": 121.061267
 }
 
 PH_OFFSET = timedelta(hours=8)
