@@ -420,15 +420,15 @@ def build_card(loc, aqi_data, taal_wind):
     wind_message = get_wind_message(taal_wind_deg, loc["lat"], loc["lon"], loc["name"], wind_deg, wind_speed)
 
     return f"""
-<td width="50%" style="padding: 8px; vertical-align: top;">
+<td width="50%" style="padding: 8px; vertical-align: top; height: 100%;">
 
   <!-- Location label -->
   <p style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333; margin:0 0 8px 0;">
     📍 {html.escape(loc['name'])}
   </p>
 
-  <!-- Card -->
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px; overflow:hidden; border:1px solid #e0e0e0;">
+  <!-- Card (with fixed height for alignment) -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px; overflow:hidden; border:1px solid #e0e0e0; height:100%; display:flex; flex-direction:column;">
 
     <!-- AQI Header -->
     <tr>
@@ -453,9 +453,9 @@ def build_card(loc, aqi_data, taal_wind):
       </td>
     </tr>
 
-    <!-- Body -->
-    <tr>
-      <td style="background-color:#ffffff; padding:14px 16px;">
+    <!-- Body (flex-grow to fill remaining space) -->
+    <tr style="height: 100%;">
+      <td style="background-color:#ffffff; padding:14px 16px; flex-grow:1; display:flex; flex-direction:column;">
 
         <!-- Main pollutant -->
         <p style="font-family:Arial,sans-serif; font-size:12px; color:#555; margin:0 0 10px 0;">
@@ -471,8 +471,8 @@ def build_card(loc, aqi_data, taal_wind):
           </td></tr>
         </table>
 
-        <!-- Weather stats -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f0f0f0; border-radius:6px; overflow:hidden;">
+        <!-- Weather stats (flex-grow to push down if needed) -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f0f0f0; border-radius:6px; overflow:hidden; margin-top:auto;">
           <tr>
             <td width="33%" style="padding:10px 6px; text-align:center; background:#f9f9f9; border-right:1px solid #f0f0f0;">
               <div style="font-family:Arial,sans-serif; font-size:10px; color:#888; margin-bottom:4px;">Temperature</div>
@@ -546,7 +546,7 @@ def build_html_email():
         html_content += build_card(loc, aqi_data, taal_wind)
     
     # Add Binan card (built from single station data)
-    binan_card_data = {"name": "Binan Laguna", "lat": 14.2769, "lon": 121.0589}
+    binan_card_data = {"name": "Binan Laguna", "lat": 14.2655, "lon": 121.4338}
     binan_data = location_data.get("Binan Laguna")
     # If no current data, get last known value
     if binan_data is None:

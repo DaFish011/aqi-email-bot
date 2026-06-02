@@ -67,17 +67,17 @@ def get_aqi_from_iqair(lat, lon):
         return None
 
 # =========================
-# STORE 5-MINUTE READING IN FIREBASE
+# STORE HOURLY READING IN FIREBASE
 # =========================
 def store_reading(location_name, aqi):
-    """Store AQI reading with 5-minute precision"""
+    """Store AQI reading with hourly precision"""
     if aqi is None:
         logger.warning(f"Skipping {location_name} - no AQI data")
         return False
 
     now_ph   = datetime.utcnow() + PH_OFFSET
     date_key = now_ph.strftime("%Y-%m-%d")
-    time_key = now_ph.strftime("%H:%M")  # Now includes minutes (HH:MM format)
+    time_key = now_ph.strftime("%H")  # Hourly format (HH)
 
     try:
         ref = db.reference(f"aqi_hourly/{location_name}/{date_key}/{time_key}")
@@ -112,7 +112,7 @@ def cleanup_old_data(days=180):
 # MAIN
 # =========================
 def collect_aqi():
-    logger.info("Starting 5-minute AQI collection (IQAir)...")
+    logger.info("Starting hourly AQI collection (IQAir)...")
     
     # Collect Calamba data
     for loc in locations:
