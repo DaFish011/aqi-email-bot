@@ -35,12 +35,12 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba Laguna", "lat": 14.2014, "lon": 121.0617},  # Bong Valdez station
+    {"name": "Calamba Laguna", "lat": 14.195, "lon": 121.065},  # Correct Calamba station coordinates
 ]
 
-# Binan uses only Unioil San Francisco Halang Rd
+# Binan uses official API city coordinates (from /city endpoint, AQI ~65)
 binan_station = {
-    "name": "Unioil San Francisco Halang Rd", "lat": 14.335029, "lon": 121.061267
+    "name": "Binan Laguna", "lat": 14.2655, "lon": 121.4338
 }
 
 PH_OFFSET = timedelta(hours=8)
@@ -119,9 +119,9 @@ def collect_aqi():
         aqi = get_aqi_from_iqair(loc["lat"], loc["lon"])
         store_reading(loc["name"], aqi)
     
-    # Collect Binan data (single station only)
+    # Collect Binan data
     binan_aqi = get_aqi_from_iqair(binan_station["lat"], binan_station["lon"])
-    store_reading("Binan Laguna", binan_aqi)
+    store_reading(binan_station["name"], binan_aqi)
     
     cleanup_old_data(days=30)
     logger.info("AQI collection complete")

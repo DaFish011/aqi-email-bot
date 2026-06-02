@@ -58,12 +58,12 @@ except ValueError:
 # LOCATIONS
 # =========================
 locations = [
-    {"name": "Calamba Laguna", "lat": 14.2014, "lon": 121.0617},  # Bong Valdez station
+    {"name": "Calamba Laguna", "lat": 14.195, "lon": 121.065},  # Correct Calamba station coordinates
 ]
 
-# Binan uses only Unioil San Francisco Halang Rd
+# Binan uses official API city coordinates (from /city endpoint, AQI ~65)
 binan_station = {
-    "name": "Unioil San Francisco Halang Rd", "lat": 14.335029, "lon": 121.061267
+    "name": "Binan Laguna", "lat": 14.2655, "lon": 121.4338
 }
 TAAL_LAT  = 14.0136
 TAAL_LON  = 120.9842
