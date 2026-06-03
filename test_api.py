@@ -4,19 +4,19 @@ import os
 IQAIR_API_KEY = os.getenv("IQAIR_API_KEY", "YOUR_API_KEY_HERE")
 
 print("=" * 90)
-print("Testing IQAir API - Official Binan City Coordinates from /city endpoint")
+print("Testing IQAir API - New Calamba Coordinates (14.192, 121.1311)")
 print("=" * 90)
 
-# Official API Binan city coordinates (14.2655, 121.4338)
-center_lat = 14.2655
-center_lon = 121.4338
+# New Calamba coordinates (14.192, 121.1311)
+center_lat = 14.192
+center_lon = 121.1311
 
 test_points = [
-    {"name": "Official Binan API Coordinates", "lat": center_lat, "lon": center_lon},
-    {"name": "Binan Point 1 (0.01° North)", "lat": center_lat + 0.01, "lon": center_lon},
-    {"name": "Binan Point 2 (0.01° South)", "lat": center_lat - 0.01, "lon": center_lon},
-    {"name": "Binan Point 3 (0.01° East)", "lat": center_lat, "lon": center_lon + 0.01},
-    {"name": "Binan Point 4 (0.01° West)", "lat": center_lat, "lon": center_lon - 0.01},
+    {"name": "New Calamba Coordinates", "lat": center_lat, "lon": center_lon},
+    {"name": "Calamba Point 1 (0.01° North)", "lat": center_lat + 0.01, "lon": center_lon},
+    {"name": "Calamba Point 2 (0.01° South)", "lat": center_lat - 0.01, "lon": center_lon},
+    {"name": "Calamba Point 3 (0.01° East)", "lat": center_lat, "lon": center_lon + 0.01},
+    {"name": "Calamba Point 4 (0.01° West)", "lat": center_lat, "lon": center_lon - 0.01},
 ]
 
 for point in test_points:
