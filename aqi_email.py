@@ -415,6 +415,18 @@ def build_card(loc, aqi_data, taal_wind):
     wind_speed     = aqi_data.get("wind_speed", "-")
     wind_deg       = aqi_data.get("wind_direction")
     color          = aqi_info["color"]
+    
+    # Calculate darker border color and light background color
+    color_map = {
+        "#43a047": {"dark": "#2d7a39", "light": "#f0f8f0"},      # Good - Green
+        "#fbc02d": {"dark": "#d4a017", "light": "#fffde7"},      # Fair - Yellow
+        "#fb8c00": {"dark": "#c86400", "light": "#fff3e0"},      # Moderate - Orange
+        "#e53935": {"dark": "#b71c1c", "light": "#ffebee"},      # Poor - Red
+        "#6a1b9a": {"dark": "#4a148c", "light": "#f3e5f5"}       # Very Poor - Purple
+    }
+    
+    border_color = color_map.get(color, {}).get("dark", color)
+    light_bg = color_map.get(color, {}).get("light", "#f5f5f5")
 
     taal_wind_deg = taal_wind.get("wind_direction") if taal_wind else None
     wind_message = get_wind_message(taal_wind_deg, loc["lat"], loc["lon"], loc["name"], wind_deg, wind_speed)
@@ -427,16 +439,17 @@ def build_card(loc, aqi_data, taal_wind):
     📍 {html.escape(loc['name'])}
   </p>
 
-  <!-- Card Container -->
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:12px; overflow:hidden; border:none; background-color:{color};">
+  <!-- Card Container with border and fixed height -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="border: 2px solid {border_color}; border-radius:12px; overflow:hidden; height:320px; display:flex; flex-direction:column;">
 
-    <!-- Top Section: AQI Info + Main Pollutant -->
-    <tr>
-      <td style="padding:16px; background-color:{color};">
-        <!-- Row 1: AQI + Label + Emoji -->
+    <!-- Top Section: AQI Info + Pollutant + Wind -->
+    <tr style="height: 200px;">
+      <td style="background-color:{color}; padding:16px; flex-shrink:0;">
+        
+        <!-- AQI Row -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
           <tr>
-            <td width="60" style="vertical-align:middle; text-align:center;">
+            <td width="60" style="text-align:center; vertical-align:top;">
               <div style="font-family:Arial,sans-serif; font-size:28px; font-weight:bold; color:white;">{aqi_value}</div>
               <div style="font-family:Arial,sans-serif; font-size:10px; color:white; opacity:0.9;">US AQI*</div>
             </td>
@@ -444,32 +457,33 @@ def build_card(loc, aqi_data, taal_wind):
               <div style="font-family:Arial,sans-serif; font-size:18px; font-weight:bold; color:white;">{aqi_info['label']}</div>
               <div style="font-family:Arial,sans-serif; font-size:11px; color:white; opacity:0.85; line-height:1.3;">{aqi_info['advice']}</div>
             </td>
-            <td width="50" style="vertical-align:middle; text-align:right; font-size:36px; padding-right:4px;">{aqi_info['emoji']}</td>
+            <td width="50" style="text-align:right; font-size:36px; padding:0 4px;">{aqi_info['emoji']}</td>
           </tr>
         </table>
 
-        <!-- Row 2: Main Pollutant + Wind Message -->
+        <!-- Pollutant + Wind Message Box -->
         <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.15); border-radius:6px; padding:10px;">
           <tr>
-            <td style="vertical-align:middle;">
-              <div style="font-family:Arial,sans-serif; font-size:12px; color:white; margin-bottom:3px;"><strong>Main pollutant:</strong> {main_pollutant}</div>
+            <td>
+              <div style="font-family:Arial,sans-serif; font-size:12px; color:white; margin-bottom:4px;"><strong>Main pollutant:</strong> {main_pollutant}</div>
               <div style="font-family:Arial,sans-serif; font-size:11px; color:white; opacity:0.9; line-height:1.3;">{html.escape(wind_message)}</div>
             </td>
           </tr>
         </table>
+
       </td>
     </tr>
 
-    <!-- Bottom Section: Weather Stats -->
-    <tr>
-      <td style="padding:12px 16px; background-color:#ffffff; border-radius:0 0 12px 12px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="text-align:center;">
+    <!-- Bottom Section: Weather Stats with light background -->
+    <tr style="height: 120px;">
+      <td style="background-color:{light_bg}; padding:12px 16px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="height:100%; text-align:center;">
           <tr>
             <td width="33%" style="padding:0 6px;">
               <div style="font-family:Arial,sans-serif; font-size:24px; margin-bottom:6px;">🌡️</div>
               <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{temp}°C</div>
             </td>
-            <td width="34%" style="padding:0 6px; border-left:1px solid #e0e0e0; border-right:1px solid #e0e0e0;">
+            <td width="34%" style="padding:0 6px; border-left:1px solid rgba(0,0,0,0.1); border-right:1px solid rgba(0,0,0,0.1);">
               <div style="font-family:Arial,sans-serif; font-size:24px; margin-bottom:6px;">💨</div>
               <div style="font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#333;">{wind_speed} m/s</div>
             </td>
@@ -507,7 +521,7 @@ def build_html_email():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin:0; padding:10px; background-color:#f5f5f5; font-family:Arial,sans-serif;">
+<body style="margin:0; padding:10px; background: linear-gradient(135deg, rgba(230, 225, 255, 0.4) 0%, rgba(200, 190, 255, 0.2) 100%); font-family:Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0">
 <tr><td align="center">
 <table width="100%" cellpadding="0" cellspacing="0" style="max-width:900px; background-color:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
